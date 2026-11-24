@@ -311,3 +311,19 @@ docker run --rm -v $(pwd):/src/ xfangfang/wiliwili_ps4_builder:latest \
 | `resources/i18n/` | Translations (en-US, zh-Hans, zh-Hant, ja, ko, it, ja-RYU) |
 | `scripts/` | Build scripts for each platform; `README.md` covers custom ffmpeg/mpv for Switch |
 
+---
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues for `thedavidweng/wiliwili-ns2`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical triage roles; label strings equal their names: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
