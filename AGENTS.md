@@ -203,24 +203,38 @@ Main config file: `{configDir}/wiliwili_config.json` (cookie, refreshToken, all 
 
 ## Build Commands
 
+`CMakePresets.json` is authoritative; every preset uses Ninja and builds into
+`build/<preset>`. See `docs/building.md` for the Switch 2 SDK review.
+
 ### Desktop (macOS)
 ```sh
 brew install mpv webp
-cmake -B build -DPLATFORM_DESKTOP=ON
-make -C build wiliwili -j$(sysctl -n hw.ncpu)
-# macOS app bundle:
-make -C build wiliwili.app
+cmake --preset desktop-release
+cmake --build --preset desktop-release
+ctest --preset desktop-release --output-on-failure
+# symbols, no optimisation: cmake --preset desktop-debug
+# macOS app bundle: cmake --build --preset desktop-release --target wiliwili.app
 ```
 
 ### Desktop (Linux/Ubuntu)
 ```sh
 sudo apt install libssl-dev libmpv-dev libwebp-dev
-cmake -B build -DPLATFORM_DESKTOP=ON
-make -C build wiliwili -j$(nproc)
+cmake --preset desktop-release
+cmake --build --preset desktop-release
 # System install with .desktop entry:
-cmake -B build -DPLATFORM_DESKTOP=ON -DINSTALL=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-make -C build wiliwili -j$(nproc) && sudo make -C build install
+cmake -B build/install -G Ninja -DPLATFORM_DESKTOP=ON -DINSTALL=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+cmake --build build/install -j$(nproc) && sudo cmake --install build/install
 ```
+
+### Switch 2 (Docker, `[ounce]` devkit)
+```sh
+scripts/switch2/build.sh image        # devkita64 + [ounce] libounce/OunceVK/libkaihen + FFmpeg 7.1/mpv 0.36.0
+scripts/switch2/build.sh configure    # cmake --preset switch2-release
+scripts/switch2/build.sh build        # wiliwili.nro + unstripped wiliwili.elf
+```
+The image and every package in it are pinned in `UPSTREAM.json`;
+`cmake/Switch2Platform.cmake` re-applies the libounce platform after Borealis'
+Switch 1 toolchain branch. Docker needs ~8 GB to build the NRO.
 
 ### Nintendo Switch (Docker, recommended)
 ```sh
@@ -263,6 +277,8 @@ docker run --rm -v $(pwd):/src/ xfangfang/wiliwili_ps4_builder:latest \
 | `-DDEBUG_SANITIZER=ON` | Enable ASan/UBSan (debug only) |
 | `-DUSE_LIBROMFS=ON` | Embed resources into binary |
 | `-DBUILTIN_NSP=ON` | Embed NSP forwarder (Switch only) |
+| `-DPLATFORM_SWITCH2=ON` | Switch 2 with the `[ounce]` libounce devkit (needs `-DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/libounce/cmake/Switch2.cmake`) |
+| `-DWILIWILI_BUILD_TESTS=ON` | Host checks for `UPSTREAM.json` pins and the Switch 2 configuration (`ctest`) |
 | `-DAPP_PLATFORM_CUSTOM_LIBS=ON` | Manual deps: `APP_PLATFORM_INCLUDE` + `APP_PLATFORM_LINK_OPTION` |
 
 ---
@@ -281,7 +297,8 @@ docker run --rm -v $(pwd):/src/ xfangfang/wiliwili_ps4_builder:latest \
 
 | Macro | Platform |
 |---|---|
-| `__SWITCH__` | Nintendo Switch |
+| `__SWITCH__` | Nintendo Switch, and Switch 2 (libounce keeps the libnx names) |
+| `__SWITCH2__` | Switch 2 ([ounce] devkit: libounce, OunceVK) |
 | `__PSV__` | PlayStation Vita |
 | `PS4` | PlayStation 4 |
 | `BOREALIS_USE_OPENGL` / `BOREALIS_USE_DEKO3D` / `BOREALIS_USE_D3D11` / `BOREALIS_USE_GXM` | Rendering backend |
@@ -310,6 +327,12 @@ docker run --rm -v $(pwd):/src/ xfangfang/wiliwili_ps4_builder:latest \
 | `wiliwili/include/api/live/danmaku_live.hpp` | Live room WebSocket danmaku via mongoose |
 | `resources/xml/` | All UI layout files |
 | `resources/i18n/` | Translations (en-US, zh-Hans, zh-Hant, ja, ko, it, ja-RYU) |
+| `CMakePresets.json` | Authoritative Ninja presets: `desktop-debug`, `desktop-release`, `switch2-release` |
+| `UPSTREAM.json` | Pinned upstream/reference commits, submodule gitlinks, container digest, package versions and sha256 |
+| `cmake/Switch2Platform.cmake` | Re-applies the libounce/OunceVK platform after Borealis' Switch 1 toolchain branch |
+| `scripts/switch2/` | Switch 2 container (`Dockerfile`) and helper (`build.sh`) |
+| `tests/config_test.cpp` | Host checks for the pins and the Switch 2 configuration (`WILIWILI_BUILD_TESTS=ON`) |
+| `docs/building.md` | Build commands and the verified Switch 2 SDK capability review |
 | `scripts/` | Build scripts for each platform; `README.md` covers custom ffmpeg/mpv for Switch |
 
 ---

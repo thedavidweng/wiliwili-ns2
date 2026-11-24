@@ -1,0 +1,157 @@
+# Building wiliwili-NS2
+
+`CMakePresets.json` is the single source of truth for configurations: every build
+below is a preset, and every preset uses Ninja. Build directories live in
+`build/`, which git ignores.
+
+## Host (desktop)
+
+```sh
+brew install mpv webp            # macOS; Linux: libmpv-dev, libwebp-dev, libssl-dev
+
+cmake --preset desktop-release
+cmake --build --preset desktop-release
+ctest --preset desktop-release --output-on-failure
+
+# symbols, no optimisation
+cmake --preset desktop-debug
+cmake --build --preset desktop-debug
+```
+
+Both host presets set `BRLS_UNITY_BUILD=OFF` and `WILIWILI_BUILD_TESTS=ON`.
+Verified on macOS 27.2.1 (arm64) with CMake 4.5.1, Ninja 1.13.2, Homebrew
+mpv 0.42.0 and webp 1.6.0: configure, build and `ctest` pass. The `.app` bundle
+target (`cmake --build --preset desktop-release --target wiliwili.app`) is
+unchanged upstream behaviour.
+
+## Switch 2 (NS2 NRO)
+
+The container is pinned in `UPSTREAM.json` and defined in
+`scripts/switch2/Dockerfile`: devkitPro `devkita64:20260219` by digest, the
+official `[ounce]` devkit (`libounce`, `OunceVK`, `libkaihen`
+`20261117.1-1`) from `https://pkg.ouncebrew.org` with its signing key verified
+against the fingerprint `ouncebrew/ounce-devkit` pins, and the FFmpeg 7.1 /
+dav1d / mpv 0.36.0 portlibs verified by sha256. Those three portlib packages
+only install headers, static libraries and `.pc` files under
+`portlibs/switch`; they ship no GPU or libnx archive, and `mpv.pc`'s
+`Requires: egl > 1.4.0` resolves to OunceVK's `egl.pc`.
+
+```sh
+scripts/switch2/build.sh image        # docker build -t wiliwili-ns2-toolchain:local
+scripts/switch2/build.sh configure    # cmake --preset switch2-release
+scripts/switch2/build.sh build        # wiliwili.nro (+ the unstripped wiliwili.elf)
+```
+
+The same by hand:
+
+```sh
+docker build -f scripts/switch2/Dockerfile -t wiliwili-ns2-toolchain:local .
+docker run --rm -v "$PWD:/src" -w /src wiliwili-ns2-toolchain:local cmake --preset switch2-release
+docker run --rm -v "$PWD:/src" -w /src wiliwili-ns2-toolchain:local cmake --build --preset switch2-release
+```
+
+Docker Desktop has to share the checkout (on macOS a path under `/Users`; `/tmp`
+is not shared by default).
+
+### What the `switch2-release` preset sets
+
+| Variable | Value | Why |
+|---|---|---|
+| `PLATFORM_SWITCH` / `PLATFORM_SWITCH2` | `ON` | Borealis' Switch backend plus the libounce portlibs and GPU libraries |
+| `USE_SDL2`, `USE_EGL` | `ON` | SDL2 window/input on an EGL surface from OunceVK |
+| `USE_GLES2` | `ON` | Zink exposes GLES 3.1, but the GLES2 path is the one Borealis and MPVCore exercise today; GLES3 is deferred until device gate G1 |
+| `USE_LIBROMFS` | `ON` | one NRO with the resources inside it |
+| `BUILTIN_NSP`, `USE_DEKO3D` | `OFF` | no Switch 1 NSP forwarder and no deko3d |
+| `CMAKE_C_FLAGS_RELEASE`, `CMAKE_CXX_FLAGS_RELEASE` | `-O2 -g -DNDEBUG` | `-O2` matches libounce's `switch2vars.sh`; `-g` keeps `wiliwili.elf` usable as a symbol source next to the stripped NRO |
+| `BRLS_UNITY_BUILD` | `OFF` | unity builds hide missing includes and break the Switch 2 include order |
+
+`-mcpu`/`-mtp`/`-ftls-model`, `-fPIE`, `-specs=.../libounce/switch.specs` and
+`-lnx` come from `$DEVKITPRO/libounce/cmake/Switch2.cmake` and
+`switch2_cpu.mk`, so they follow the devkit instead of being copied here.
+
+Not used on purpose: `-flto` (no measured gain for a first release, much slower
+builds), `-ffast-math` (the software decoder's float paths must stay exact),
+and any clock or performance-mode change (the port does not overclock).
+
+`cmake/Switch2Platform.cmake` re-applies the Switch 2 platform after Borealis'
+`toolchain.cmake`, whose `PLATFORM_SWITCH` branch still configures the Switch 1
+devkit: it points `NX_ROOT` at `$DEVKITPRO/libounce`, puts
+`$DEVKITPRO/portlibs/switch2` and `$DEVKITPRO/libounce` in front of the Switch 1
+portlibs, and builds the host `libromfs-generator` during configure so the cross
+build never tries to run an aarch64 binary.
+
+### Checking the result
+
+At configure time the resolved link line starts with the Switch 2 libraries:
+
+```
+-L/opt/devkitpro/portlibs/switch2/lib -L/opt/devkitpro/libounce/lib -L/opt/devkitpro/portlibs/switch/lib
+-specs=/opt/devkitpro/libounce/switch.specs
+```
+
+There is no `-I/opt/devkitpro/libnx` anywhere in the generated build files, and
+`libnx.a` only exists in `$DEVKITPRO/libounce/lib`, so `-lnx` links libounce.
+OunceVK also installs empty `libGLESv2.a`, `libglapi.a` and `libdrm_nouveau.a`
+in `portlibs/switch2`, which shadow the Switch 1 copies. After a link,
+`build/switch2-release/wiliwili.map` answers the same question:
+
+```sh
+grep -E "/opt/devkitpro/libnx|portlibs/switch/lib/lib(EGL|glapi|drm_nouveau)" \
+     build/switch2-release/wiliwili.map   # must print nothing
+```
+
+### Validation scope
+
+This ticket pins the toolchain, the presets and the platform wiring: the
+`switch2-release` configure completes with no errors and resolves every library
+as described above. The NRO does not link yet, because Borealis' Switch backend
+and MPVCore still target the Switch 1 GPU libraries; that port and its device
+gates are the follow-up tickets. The 313-target cross build was attempted here
+and stopped when `cc1plus` was OOM-killed at 97/313 in this machine's Docker VM
+(2 GB RAM, 2 CPUs). Give Docker Desktop at least 8 GB before building the NRO.
+
+### Deploying
+
+Copy `build/switch2-release/wiliwili.nro` to the SD card as
+`/switch/wiliwili.nro` and start it from kaiHEN's homebrew menu. Configuration
+is read from `/config/wiliwili/` as on Switch 1. Keep `wiliwili.elf` next to the
+release artifacts: the NRO is created from it by `elf2nro`, and crash addresses
+only resolve against that exact ELF.
+
+## Tests
+
+`ctest --preset desktop-release` runs `tests/config_test.cpp` (host only, built
+when `WILIWILI_BUILD_TESTS=ON`). It checks that `UPSTREAM.json` still records the
+revisions and digests this port was built against, that no pin floats (`latest`,
+`:latest`, `head`), that each of the six `dragonflylee/wiliwili` `dev` commits is
+either integrated or explicitly skipped, that `scripts/switch2/Dockerfile`
+installs exactly the digests and sha256 values `UPSTREAM.json` records, and that
+the presets keep the Switch 2 configuration (libounce toolchain, no deko3d, no
+NSP forwarder, safe release flags).
+
+## Switch 2 SDK capability review
+
+Verified against the built image by reading the installed headers and packages,
+not from documentation. `aarch64-none-elf-g++ (devkitA64) 15.2.0`, newlib
+`4.6.0.20260123`, `libounce`/`ouncevk`/`libkaihen` `20261117.1-1`.
+
+| Capability | Verified API | Use in this port |
+|---|---|---|
+| Joy-Con 2 mouse / pointer | `switch/runtime/pad.h`: `PadPointer` (`active`, `engaged`, `side`, `x`, `y`, `delta_x`, `delta_y`, `wheel_delta_y`, `buttons_cur/old`), `PadPointerSide_Left/Right`, `padPointerInitialize(width, height)`, `padPointerUpdate(pad)` per frame, `padPointerGetButtons[Down/Up]`; `switch2/services/nmouse.h`: `HidNmouseState`, `HidNmouseStateWithDelta`, `hidInitializeNmouse(buffer, size, width, height, pointer_type)`, `hidGetNmouseHandles`, `hidGetNmouseStates`, `HidNmouseButtonConfigJoyLeftJcms/JoyRightJcms/StandardMouse` | Feeds Borealis' mouse abstraction (pointer, drag, scroll) for gate G1. Both the Joy-Con 2 pointer and a standard USB mouse are covered |
+| Display and refresh | `switch2/services/vi2.h`, `switch2/services/gsv.h`, `switch/display/{native_window,framebuffer,buffer_producer,binder,parcel}.h` | SDL2 window on an EGL surface; dynamic display modes and refresh switching are deferred to G1 |
+| GPU / graphics | OunceVK `portlibs/switch2/lib/libEGL.a` (EGL, OpenGL, GLES 3.1 through Zink), `libvulkan.a` (Mesa NVK, Vulkan 1.4), empty `libGLESv2.a`/`libglapi.a`/`libdrm_nouveau.a` stubs; pkg-config `egl`, `glesv2`, `gl`, `vulkan`, `libdrm_nouveau` version `26.2.2` | The existing MPVCore framebuffer GL path and Borealis' nanovg GL driver, unchanged |
+| Hardware video decode | `switch2/services/viddec.h`: `ViddecCodec`, `ViddecOutputFormat`, `ViddecTilingMode`, `viddecOpenDecoder`, `viddecDecoder{Initialize,Start,Stop,Flush,Submit,AcquireImage,GetOutputProperties,ReleaseImage}`, NV12 image pools (`viddecImagePoolCreate`, `viddecImagePoolReadNv12`, `viddecCopyImageNv12`) with `GsvNativeSync` producer/consumer fences | Deferred: software decoding is the baseline (ADR 0001). The zero-copy or bounded-copy path is the post-G2 hardware track, decided at G3 |
+| Audio | `switch/audio/audio.h`, `switch/audio/driver.h` | SDL2 audio output through the libnx-compatible driver; no change needed for the software baseline |
+| Lifecycle and applets | `switch/services/applet.h`, `switch/applets/swkbd.h` (`swkbdCreate`, `swkbdConfig`), `switch2/services/audu.h` | Applet and lifecycle hooks feed the Borealis Switch platform; the software keyboard is the path for Chinese search input later |
+| Shared fonts | `switch/services/pl.h`: `plGetSharedFont`, `plGetSharedFontByType` | CJK glyph fallback from the system font service, so no console font binary has to be redistributed |
+| kaiHEN | `libkaihen` (`kaihen.h`, `libkaihen.a`, `libkaihen_plugin.a`, `kaihen-jit.o`) | Not used. No plugin, JIT or gaming-only feature is imported |
+
+Deferred with a reason:
+
+- Vulkan nanovg backend: `ollix/nanovg-vulkan` is not reachable (HTTP 404), and
+  borealis has no Vulkan driver to plug it into.
+- mpv Vulkan render API: mpv's public `render.h` still has no caller-owned
+  Vulkan render path (`mpv#18343` is open), so MPVCore keeps EGL/GLES.
+- `VideoDecoder` zero-copy GPU import: needs the G2 benchmark first (G3).
+- GLES3 contexts: available through Zink, but only worth switching once a device
+  run shows a benefit.
