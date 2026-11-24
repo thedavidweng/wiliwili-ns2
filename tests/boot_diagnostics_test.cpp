@@ -9,6 +9,7 @@
 #include <iostream>
 #include <iterator>
 #include <string>
+#include <vector>
 
 #include "utils/boot_diagnostics.hpp"
 
@@ -121,6 +122,78 @@ void check_gpu_formatter() {
     CHECK_EQ(wili::formatGpuDiagnostics({}), "gpu api: unknown\n");
 }
 
+// Driver extension lists are long, and the 200 byte cap that keeps other driver
+// strings on one readable line would cut their tail off. The extensions that
+// say whether OunceVK can present at all (VK_NN_vi_surface) or hand out GPU
+// memory are as likely to be at the end as at the start, so the list wraps
+// instead of being truncated.
+bool lines_within(const std::string& text, size_t maxLength, std::string& offender) {
+    size_t start = 0;
+    while (start < text.size()) {
+        const size_t end = text.find('\n', start);
+        const std::string line = text.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        if (line.size() > maxLength) {
+            offender = line;
+            return false;
+        }
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+    return true;
+}
+
+void check_extension_list() {
+    // Nothing to report is still a report.
+    CHECK_EQ(wili::formatExtensionList("GL_EXTENSIONS", {}), "GL_EXTENSIONS: none\n");
+
+    // A list that fits stays on one line, with its count.
+    CHECK_EQ(wili::formatExtensionList("GL_EXTENSIONS", {"GL_EXT_a", "GL_EXT_b", "GL_EXT_c"}),
+             "GL_EXTENSIONS (3): GL_EXT_a GL_EXT_b GL_EXT_c\n");
+
+    // Too long for one line: wrapped, and every line says what it is.
+    CHECK_EQ(wili::formatExtensionList("GL_EXTENSIONS",
+                                       {"GL_EXT_aaaaaaaaaa", "GL_EXT_bbbbbbbbbb", "GL_EXT_cccccccccc",
+                                        "GL_EXT_dddddddddd"},
+                                       40),
+             "GL_EXTENSIONS (4): GL_EXT_aaaaaaaaaa\n"
+             ".. GL_EXT_bbbbbbbbbb GL_EXT_cccccccccc\n"
+             ".. GL_EXT_dddddddddd\n");
+
+    // An entry with no room left is marked as truncated instead of overflowing:
+    // 40 bytes of line, 19 of header, the first 18 bytes of the name and "...".
+    CHECK_EQ(wili::formatExtensionList("GL_EXTENSIONS", {"GL_EXT_" + std::string(40, 'z')}, 40),
+             "GL_EXTENSIONS (1): GL_EXT_zzzzzzzzzzz...\n");
+
+    // The real thing: 30 Vulkan extensions, all of them recorded, every line
+    // inside the cap.
+    std::vector<std::string> vulkan;
+    for (int i = 0; i < 29; ++i) vulkan.push_back("VK_KHR_some_reasonably_long_extension_name_" + std::to_string(i));
+    vulkan.push_back("VK_NN_vi_surface");
+
+    const std::string report = wili::formatExtensionList("vkDeviceExtensions", vulkan);
+    CHECK(report.rfind("vkDeviceExtensions (30): ", 0) == 0);
+    for (const auto& name : vulkan) CHECK(report.find(name) != std::string::npos);
+    std::string offender;
+    check(lines_within(report, 120, offender),
+          "every extension line stays inside the cap, offending line: \"" + offender + "\"", __LINE__);
+}
+
+// The Vulkan half of the GPU report has to list what the driver offers, not
+// just its name: the surface and memory extensions are the difference between
+// "Zink found a device" and "OunceVK can present on this console".
+void check_gpu_report_sources() {
+    const std::string video = read_source("platform/switch2/sdl_video.cpp");
+    CHECK(video.find("vkEnumerateInstanceExtensionProperties") != std::string::npos);
+    CHECK(video.find("vkEnumerateDeviceExtensionProperties") != std::string::npos);
+    CHECK(video.find("GL_EXTENSIONS") != std::string::npos);
+    // The extension lists go through the wrapper, not through a capped field.
+    CHECK(video.find("wili::formatExtensionList") != std::string::npos);
+    CHECK(video.find("vkGetPhysicalDeviceProperties") != std::string::npos);
+
+    // And they are written to boot.log, one note per line, like the rest.
+    CHECK(video.find("wiliwili_boot_note") != std::string::npos);
+}
+
 // The boot has to stay cheap and readable: no player instance before the user
 // opens a video, and a failed start reported rather than silent.
 void check_boot_stays_light() {
@@ -143,6 +216,8 @@ int main() {
     check_telemetry();
     check_sanitizer();
     check_gpu_formatter();
+    check_extension_list();
+    check_gpu_report_sources();
     check_boot_stays_light();
 
     if (failures != 0) {

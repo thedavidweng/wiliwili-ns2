@@ -54,6 +54,50 @@ std::string apiVersionString(uint32_t version)
         VK_API_VERSION_PATCH(version));
 }
 
+// glGetString(GL_EXTENSIONS) is one space separated line; "(unavailable)" is
+// what glString() returns when there is no context to ask.
+std::vector<std::string> splitExtensions(const char* list)
+{
+    std::vector<std::string> extensions;
+    if (!list || !list[0] || list[0] == '(') return extensions;
+    for (const char* cursor = list; *cursor;)
+    {
+        const char* end = cursor;
+        while (*end && *end != ' ') ++end;
+        extensions.emplace_back(cursor, end);
+        cursor = *end ? end + 1 : end;
+    }
+    return extensions;
+}
+
+std::vector<std::string> instanceExtensionNames()
+{
+    std::vector<std::string> names;
+    uint32_t count = 0;
+    if (vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr) != VK_SUCCESS || !count) return names;
+    std::vector<VkExtensionProperties> properties(count);
+    if (vkEnumerateInstanceExtensionProperties(nullptr, &count, properties.data()) != VK_SUCCESS) return names;
+    names.reserve(count);
+    for (uint32_t i = 0; i < count; ++i)
+        names.emplace_back(properties[i].extensionName);
+    return names;
+}
+
+std::vector<std::string> deviceExtensionNames(VkPhysicalDevice device)
+{
+    std::vector<std::string> names;
+    uint32_t count = 0;
+    if (vkEnumerateDeviceExtensionProperties(device, nullptr, &count, nullptr) != VK_SUCCESS || !count)
+        return names;
+    std::vector<VkExtensionProperties> properties(count);
+    if (vkEnumerateDeviceExtensionProperties(device, nullptr, &count, properties.data()) != VK_SUCCESS)
+        return names;
+    names.reserve(count);
+    for (uint32_t i = 0; i < count; ++i)
+        names.emplace_back(properties[i].extensionName);
+    return names;
+}
+
 // One boot.log line per report line, and the same text to the regular log.
 void writeReport(const char* stage, const std::string& report)
 {
@@ -73,11 +117,18 @@ void writeReport(const char* stage, const std::string& report)
 }
 
 // Zink is a Vulkan driver as much as a GL one: the device it runs on is what
-// tells us whether OunceVK got NVK. Purely informational, never fatal.
+// tells us whether OunceVK got NVK, and the extensions it offers are what says
+// whether the console's own display surface (VK_NN_vi_surface) and the GPU
+// memory sharing behind it are there. Purely informational, never fatal.
 void reportVulkanDevice()
 {
     wili::GpuDiagnostics vulkan;
     vulkan.api = "Vulkan (OunceVK)";
+
+    // Enumerating instance extensions needs no instance, so this still reports
+    // when creating one fails.
+    const std::vector<std::string> instanceExtensions = instanceExtensionNames();
+    std::vector<std::string> deviceExtensions;
 
     uint32_t instanceVersion = 0;
     if (vkEnumerateInstanceVersion(&instanceVersion) == VK_SUCCESS)
@@ -98,57 +149,53 @@ void reportVulkanDevice()
     if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS)
     {
         vulkan.fields.push_back({"vkInstance", "not available"});
-        writeReport("gpu", wili::formatGpuDiagnostics(vulkan));
-        return;
-    }
-
-    uint32_t deviceCount = 0;
-    if (vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr) == VK_SUCCESS && deviceCount > 0)
-    {
-        std::vector<VkPhysicalDevice> devices(deviceCount);
-        if (vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data()) == VK_SUCCESS)
-        {
-            VkPhysicalDeviceProperties properties = {};
-            vkGetPhysicalDeviceProperties(devices[0], &properties);
-            vulkan.fields.push_back({"vkDeviceName", properties.deviceName});
-            vulkan.fields.push_back({"vkDeviceType", fmt::format("{}", static_cast<int>(properties.deviceType))});
-            vulkan.fields.push_back({"vkDriverVersion", apiVersionString(properties.driverVersion)});
-            vulkan.fields.push_back({"vkApiVersion", apiVersionString(properties.apiVersion)});
-            vulkan.fields.push_back({"vkDeviceCount", fmt::format("{}", deviceCount)});
-        }
     }
     else
     {
-        vulkan.fields.push_back({"vkPhysicalDevices", "none"});
+        uint32_t deviceCount = 0;
+        if (vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr) == VK_SUCCESS && deviceCount > 0)
+        {
+            std::vector<VkPhysicalDevice> devices(deviceCount);
+            if (vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data()) == VK_SUCCESS && deviceCount > 0)
+            {
+                VkPhysicalDeviceProperties properties = {};
+                vkGetPhysicalDeviceProperties(devices[0], &properties);
+                vulkan.fields.push_back({"vkDeviceName", properties.deviceName});
+                vulkan.fields.push_back({"vkDeviceType", fmt::format("{}", static_cast<int>(properties.deviceType))});
+                vulkan.fields.push_back({"vkDriverVersion", apiVersionString(properties.driverVersion)});
+                vulkan.fields.push_back({"vkApiVersion", apiVersionString(properties.apiVersion)});
+                vulkan.fields.push_back({"vkDeviceCount", fmt::format("{}", deviceCount)});
+                deviceExtensions = deviceExtensionNames(devices[0]);
+            }
+        }
+        else
+        {
+            vulkan.fields.push_back({"vkPhysicalDevices", "none"});
+        }
+        vkDestroyInstance(instance, nullptr);
     }
-    vkDestroyInstance(instance, nullptr);
 
-    writeReport("gpu", wili::formatGpuDiagnostics(vulkan));
+    std::string report = wili::formatGpuDiagnostics(vulkan);
+    report += wili::formatExtensionList("vkInstanceExtensions", instanceExtensions);
+    if (!deviceExtensions.empty())
+        report += wili::formatExtensionList("vkDeviceExtensions", deviceExtensions);
+    writeReport("gpu", report);
 }
 
 void reportGraphicsCapabilities()
 {
     wili::GpuDiagnostics gl;
-    gl.api = "OpenGL ES (Zink)";
-
-    const char* extensions = glString(GL_EXTENSIONS);
-    size_t extensionCount  = 0;
-    if (extensions[0] && extensions[0] != '(')
-    {
-        extensionCount = 1;
-        for (const char* cursor = extensions; *cursor; ++cursor)
-            if (*cursor == ' ') ++extensionCount;
-    }
-
+    gl.api    = "OpenGL ES (Zink)";
     gl.fields = {
         {"GL_VENDOR", glString(GL_VENDOR)},
         {"GL_RENDERER", glString(GL_RENDERER)},
         {"GL_VERSION", glString(GL_VERSION)},
         {"GL_SHADING_LANGUAGE_VERSION", glString(GL_SHADING_LANGUAGE_VERSION)},
-        {"GL_EXTENSION_COUNT", fmt::format("{}", extensionCount)},
-        {"GL_EXTENSIONS", extensions},
     };
-    writeReport("gpu", wili::formatGpuDiagnostics(gl));
+
+    std::string report = wili::formatGpuDiagnostics(gl);
+    report += wili::formatExtensionList("GL_EXTENSIONS", splitExtensions(glString(GL_EXTENSIONS)));
+    writeReport("gpu", report);
 
     reportVulkanDevice();
 }

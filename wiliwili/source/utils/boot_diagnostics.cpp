@@ -95,6 +95,48 @@ std::string formatGpuDiagnostics(const GpuDiagnostics& diagnostics) {
     return out;
 }
 
+std::string formatExtensionList(const std::string& name, const std::vector<std::string>& extensions,
+                                size_t maxLength) {
+    std::string label = sanitizeLogValue(name, 64);
+    if (label.empty()) label = "extensions";
+
+    // The per-entry budget comes from the widest header the list can produce, so
+    // an entry that had to be cut still fits on whichever line it lands on.
+    const size_t headerLength = label.size() + 5 + std::to_string(extensions.size()).size();
+    const size_t entryBudget  = maxLength > headerLength ? maxLength - headerLength : 1;
+
+    std::vector<std::string> entries;
+    entries.reserve(extensions.size());
+    for (const auto& extension : extensions) {
+        std::string entry = sanitizeLogValue(extension, entryBudget);
+        if (!entry.empty()) entries.push_back(std::move(entry));
+    }
+    if (entries.empty()) return label + ": none\n";
+
+    const std::string continuation = ".. ";
+    std::string line               = label + " (" + std::to_string(entries.size()) + "): ";
+    std::string out;
+    bool lineIsEmpty = true;
+    for (const auto& entry : entries) {
+        if (lineIsEmpty) {
+            line += entry;
+            lineIsEmpty = false;
+            continue;
+        }
+        if (line.size() + 1 + entry.size() <= maxLength) {
+            line += ' ';
+            line += entry;
+            continue;
+        }
+        out += line;
+        out += '\n';
+        line = continuation + entry;
+    }
+    out += line;
+    out += '\n';
+    return out;
+}
+
 std::string bootLogPath(const char* platformId) {
     const std::string dir = configDirForPlatform(platformId);
     if (dir.empty()) return {};

@@ -66,6 +66,15 @@ std::string sanitizeLogValue(const std::string& value, size_t maxLength = 200);
 // "gpu api: <api>" followed by one "name: value" line per field.
 std::string formatGpuDiagnostics(const GpuDiagnostics& diagnostics);
 
+// A capability list (the GLES extension string, the Vulkan instance or device
+// extensions) as log lines: "<name> (<count>): first second ..." on the first
+// line, continued with ".. next ..." while the list lasts. Lists are long and
+// truncating them would drop the extensions worth reading, so they wrap at
+// maxLength instead; only an entry too long for a line is cut, and marked
+// with an ellipsis when it is.
+std::string formatExtensionList(const std::string& name, const std::vector<std::string>& extensions,
+                                size_t maxLength = 120);
+
 // {configDir}/boot.log for the console ports, empty when the port keeps none.
 std::string bootLogPath(const char* platformId);
 

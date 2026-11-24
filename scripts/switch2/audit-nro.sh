@@ -138,6 +138,19 @@ else
     ok "no deko3d"
 fi
 
+# nvtegra and the NVIDIA user mode driver are Switch 1's GPU libraries, linked
+# from libnx on a deko3d build. The pinned Switch FFmpeg carries its own nvtegra
+# hwaccel objects (libavcodec.a(nvtegra_*.o)), which is a codec wrapper inside
+# that FFmpeg build rather than a GPU library: nothing here may link the driver
+# itself.
+switch1_nv="$(grep -oE 'lib(nvtegra|nvidia|nvdrv)\.a' "$map" | sort -u)"
+if [ -n "$switch1_nv" ]; then
+    fail "Switch 1 NVIDIA libraries in the link map:"
+    echo "$switch1_nv" | sed 's/^/      /'
+else
+    ok "no nvtegra, nvidia or nvdrv libraries"
+fi
+
 switch1_gpu="$(grep -oE '/opt/devkitpro/portlibs/switch/lib/lib(EGL|GLESv2|glapi|drm_nouveau|vulkan)\.a' "$map" | sort -u)"
 if [ -n "$switch1_gpu" ]; then
     fail "Switch 1 GPU archives in the link map:"

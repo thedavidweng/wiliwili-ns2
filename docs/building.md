@@ -95,7 +95,7 @@ this repository so `library/borealis` stays at its pinned commit:
 
 | File | Why |
 |---|---|
-| `platform/switch2/sdl_video.cpp` | Borealis' SDL backend asks for a desktop OpenGL 4.3 core context on any `__SWITCH__` build. Here the `#ifdef __SWITCH__` block is Switch 1 only, so Switch 2 gets the GLES2 context OunceVK provides, the window is created at the console's own handheld resolution, every failing SDL/GL call is reported, and the GL strings plus the NVK Vulkan device are written to `boot.log`. `library/CMakeLists.txt` sets the submodule's file to `HEADER_FILE_ONLY` and compiles this one instead |
+| `platform/switch2/sdl_video.cpp` | Borealis' SDL backend asks for a desktop OpenGL 4.3 core context on any `__SWITCH__` build. Here the `#ifdef __SWITCH__` block is Switch 1 only, so Switch 2 gets the GLES2 context OunceVK provides, the window is created at the console's own handheld resolution, every failing SDL/GL call is reported, and the GL strings, the GLES extension list and the NVK Vulkan device with its instance and device extension lists are written to `boot.log`. `library/CMakeLists.txt` sets the submodule's file to `HEADER_FILE_ONLY` and compiles this one instead |
 | `platform/switch2/switch2_wrapper.c` | `userAppInit`: same services as the Switch 1 wrapper, each stage recorded in `boot.log`; a boot that cannot start now reports on a text console instead of going black |
 
 `platform/switch2/compat/SDL2/SDL.h` exists because devkitPro's SDL2 only puts
@@ -184,7 +184,9 @@ fails before the window exists says so on a text console. Keep
   device depends on: the Switch 2 config directory is `/config/wiliwili-ns2` and
   never `/config/wiliwili`, telemetry is off there, a driver string cannot break
   the one-line-per-note format of `boot.log`, the GPU report formatting is
-  stable, and `main()` plus the settings loader never construct `MPVCore`.
+  stable, a long extension list wraps instead of losing its tail, the video
+  backend reports the Vulkan instance and device extensions, and `main()` plus
+  the settings loader never construct `MPVCore`.
 - `switch2_artifact_audit` runs `scripts/switch2/audit-nro.sh` against
   `build/switch2-release`. It skips itself when the cross toolchain or the
   artifacts are absent, so a desktop-only checkout stays green.
