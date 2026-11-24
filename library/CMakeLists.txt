@@ -162,3 +162,30 @@ target_link_libraries(pdr mongoose tinyxml2)
 
 add_library(wiliwiliLibExtra INTERFACE)
 target_link_libraries(wiliwiliLibExtra INTERFACE cpr::cpr qrcode)
+
+if (PLATFORM_SWITCH2)
+    # Console lifecycle, display and networking (#5). Borealis' Switch platform
+    # only handles focus and exit, gates dock/undock behind BOREALIS_USE_DEKO3D
+    # (dead code on this build) and never pumps SDL, so the Switch 2 replacement
+    # lives in this repository and the submodule's file is turned into a header.
+    # This block stays at the end of the file on purpose: #4 appends its own
+    # override next to the SDL video block above, and the two never touch the
+    # same lines.
+    set(BOREALIS_SWITCH_PLATFORM ${BOREALIS_LIBRARY}/lib/platforms/switch/switch_platform.cpp)
+    set_source_files_properties(${BOREALIS_SWITCH_PLATFORM}
+            DIRECTORY ${BOREALIS_LIBRARY}
+            PROPERTIES HEADER_FILE_ONLY TRUE)
+
+    set(WILIWILI_SWITCH2_LIFECYCLE
+            ${PROJECT_SOURCE_DIR}/platform/switch2/borealis/switch_platform.cpp
+            ${PROJECT_SOURCE_DIR}/platform/switch2/switch2_display.cpp
+            ${PROJECT_SOURCE_DIR}/platform/switch2/lifecycle_probe.cpp)
+    target_sources(borealis PRIVATE ${WILIWILI_SWITCH2_LIFECYCLE})
+    set_source_files_properties(${WILIWILI_SWITCH2_LIFECYCLE} PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+
+    # switch2_display.hpp and lifecycle_probe.hpp are included by name from the
+    # platform file, and boot_api.h/platform_api.h come from wiliwili.
+    target_include_directories(borealis PRIVATE
+            ${PROJECT_SOURCE_DIR}/platform/switch2
+            ${PROJECT_SOURCE_DIR}/wiliwili/include)
+endif ()

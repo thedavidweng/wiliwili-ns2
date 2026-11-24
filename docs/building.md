@@ -97,6 +97,9 @@ this repository so `library/borealis` stays at its pinned commit:
 |---|---|
 | `platform/switch2/sdl_video.cpp` | Borealis' SDL backend asks for a desktop OpenGL 4.3 core context on any `__SWITCH__` build. Here the `#ifdef __SWITCH__` block is Switch 1 only, so Switch 2 gets the GLES2 context OunceVK provides, the window is created at the console's own handheld resolution, every failing SDL/GL call is reported, and the GL strings, the GLES extension list and the NVK Vulkan device with its instance and device extension lists are written to `boot.log`. `library/CMakeLists.txt` sets the submodule's file to `HEADER_FILE_ONLY` and compiles this one instead |
 | `platform/switch2/switch2_wrapper.c` | `userAppInit`: same services as the Switch 1 wrapper, each stage recorded in `boot.log`; a boot that cannot start now reports on a text console instead of going black |
+| `platform/switch2/borealis/switch_platform.cpp` | Borealis' Switch platform only handles focus and exit, gates `AppletHookType_OnOperationMode` behind `BOREALIS_USE_DEKO3D` (dead code on this build) and never pumps `SDL_PollEvent`, so the queue used to grow for the whole session and a dock or a resume was invisible to the UI. The replacement handles every applet hook, pumps SDL, follows the display on dock/undock, paces frames from the panel refresh and releases the platform in a fixed teardown order |
+| `platform/switch2/switch2_display.{hpp,cpp}` | The display decisions: what the console reports (`appletGetDefaultDisplayResolution`, `appletGetOperationMode`), what it can refresh at (`vi2QueryDisplayRefreshRate`, `vi2QueryDisplayModeCapability`, a `vi2SetDisplay120HzCapability` request), and how that becomes a framebuffer, a GL viewport and a Borealis logical size. All of it best effort: VI2 may answer busy while OunceVK owns the window |
+| `platform/switch2/lifecycle_probe.{hpp,cpp}` | The pre-playback probe: `audoutInitialize`/`audoutListAudioOuts` over libounce's `aud:u` route plus `nifm` connection, address and DNS state, one sanitized `boot.log` line, and the teardown order the platform destructor follows |
 
 `platform/switch2/compat/SDL2/SDL.h` exists because devkitPro's SDL2 only puts
 `.../portlibs/switch/include/SDL2` on the include path, and adding its parent
@@ -154,7 +157,8 @@ picks `-j 1` there): `wiliwili-NS2.nro` and `wiliwili-NS2.elf` link against
 libounce and OunceVK only, and the audit above passes. Nothing here has run on
 hardware yet: the runtime gates for the window on Zink/NVK, input, audio and
 playback are the follow-up tickets, and `boot.log` is what those bring-ups read
-first.
+first. `docs/g1-checklist.md` is the procedure for the first of them (gate G1):
+what to deploy, which `boot.log` lines to read and what to record.
 
 ### Deploying
 
@@ -169,7 +173,7 @@ fails before the window exists says so on a text console. Keep
 
 ## Tests
 
-`ctest --preset desktop-release` runs three host checks (built when
+`ctest --preset desktop-release` runs four host checks (built when
 `WILIWILI_BUILD_TESTS=ON`):
 
 - `config_pins` (`tests/config_test.cpp`) checks that `UPSTREAM.json` still
@@ -190,6 +194,15 @@ fails before the window exists says so on a text console. Keep
 - `switch2_artifact_audit` runs `scripts/switch2/audit-nro.sh` against
   `build/switch2-release`. It skips itself when the cross toolchain or the
   artifacts are absent, so a desktop-only checkout stays green.
+- `switch2_lifecycle` (`tests/switch2_lifecycle_test.cpp`) checks the console
+  lifecycle decisions that do not need hardware: the framebuffer fitted from the
+  reported output mode (1080p handheld passes through, a 4K docked report is
+  fitted while keeping its aspect ratio, nothing is stretched), refresh word
+  decoding and the diagnostics line that keeps render size, refresh rate and
+  output mode apart, the presentation pacer (full rate while busy, 30 Hz after a
+  quiet second, never overriding a frame rate the user pinned), the
+  pre-playback probe state machine and its sanitized summary, and the teardown
+  order the platform destructor follows.
 
 ## Switch 2 SDK capability review
 
@@ -200,7 +213,7 @@ not from documentation. `aarch64-none-elf-g++ (devkitA64) 15.2.0`, newlib
 | Capability | Verified API | Use in this port |
 |---|---|---|
 | Joy-Con 2 mouse / pointer | `switch/runtime/pad.h`: `PadPointer` (`active`, `engaged`, `side`, `x`, `y`, `delta_x`, `delta_y`, `wheel_delta_y`, `buttons_cur/old`), `PadPointerSide_Left/Right`, `padPointerInitialize(width, height)`, `padPointerUpdate(pad)` per frame, `padPointerGetButtons[Down/Up]`; `switch2/services/nmouse.h`: `HidNmouseState`, `HidNmouseStateWithDelta`, `hidInitializeNmouse(buffer, size, width, height, pointer_type)`, `hidGetNmouseHandles`, `hidGetNmouseStates`, `HidNmouseButtonConfigJoyLeftJcms/JoyRightJcms/StandardMouse` | Feeds Borealis' mouse abstraction (pointer, drag, scroll) for gate G1. Both the Joy-Con 2 pointer and a standard USB mouse are covered |
-| Display and refresh | `switch2/services/vi2.h`, `switch2/services/gsv.h`, `switch/display/{native_window,framebuffer,buffer_producer,binder,parcel}.h` | SDL2 window on an EGL surface; dynamic display modes and refresh switching are deferred to G1 |
+| Display and refresh | `switch2/services/vi2.h` (`vi2QueryDisplayRefreshRate`, `vi2QueryDisplayModeCapability`, `vi2SetDisplay120HzCapability`), `appletGetDefaultDisplayResolution` + its change event, `appletGetOperationMode`, `switch2/services/gsv.h`, `switch/display/{native_window,framebuffer,buffer_producer,binder,parcel}.h` | SDL2 window on an EGL surface; dock/undock, refresh reporting and the 120 Hz request are wired in `platform/switch2/switch2_display.cpp`, see `docs/g1-checklist.md` for what still needs the console |
 | GPU / graphics | OunceVK `portlibs/switch2/lib/libEGL.a` (EGL, OpenGL, GLES 3.1 through Zink), `libvulkan.a` (Mesa NVK, Vulkan 1.4), empty `libGLESv2.a`/`libglapi.a`/`libdrm_nouveau.a` stubs; pkg-config `egl`, `glesv2`, `gl`, `vulkan`, `libdrm_nouveau` version `26.2.2` | The existing MPVCore framebuffer GL path and Borealis' nanovg GL driver, unchanged |
 | Hardware video decode | `switch2/services/viddec.h`: `ViddecCodec`, `ViddecOutputFormat`, `ViddecTilingMode`, `viddecOpenDecoder`, `viddecDecoder{Initialize,Start,Stop,Flush,Submit,AcquireImage,GetOutputProperties,ReleaseImage}`, NV12 image pools (`viddecImagePoolCreate`, `viddecImagePoolReadNv12`, `viddecCopyImageNv12`) with `GsvNativeSync` producer/consumer fences | Deferred: software decoding is the baseline (ADR 0001). The zero-copy or bounded-copy path is the post-G2 hardware track, decided at G3 |
 | Audio | `switch/audio/audio.h`, `switch/audio/driver.h` | SDL2 audio output through the libnx-compatible driver; no change needed for the software baseline |

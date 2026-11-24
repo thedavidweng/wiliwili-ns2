@@ -222,14 +222,7 @@ std::unordered_map<SettingItem, ProgramOption> ProgramConfig::SETTING_MAP = {
     {SettingItem::SEARCH_TV_MODE, {"search_tv_mode", {}, {}, 1}},
     {SettingItem::HTTP_PROXY_STATUS, {"http_proxy_status", {}, {}, 0}},
     {SettingItem::TLS_VERIFY,
-     {"tls_verify",
-      {},
-      {},
-#if defined(__PSV__) || defined(__SWITCH__) || defined(PS4)
-      0}},
-#else
-      1}},
-#endif
+     {"tls_verify", {}, {}, size_t(wili::tlsVerifyDefaultForPlatform(wili::PLATFORM_ID))}},
 
     /// number
 #if defined(__PSV__)

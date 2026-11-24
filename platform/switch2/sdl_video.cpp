@@ -11,13 +11,16 @@
  *   OunceVK's EGL provides (GLES on Zink) and what nanovg is asked to draw with.
  * - SDL_Init also starts the timer subsystem, and every SDL/GL call that can
  *   fail is checked and reported instead of leaving a black screen.
- * - The window asks for the console's own handheld resolution, so the
+ * - The window opens at the console's own handheld resolution, so the
  *   framebuffer is 1:1 with the panel and Nanovg scales the 1280x720 layout up.
+ *   The size, the viewport and the device pixel ratio all come from
+ *   switch2_display.cpp, which is also what follows a dock/undock; this file
+ *   only owns the window and the GL context.
  * - The driver capabilities (GL strings, GLES extensions and the NVK Vulkan
  *   device underneath Zink) are written to boot.log.
+ * - SDL events are not watched here: SwitchPlatform pumps the queue every frame,
+ *   because nothing else on this platform drains it.
  */
-
-#include <switch.h>
 
 #include <fmt/format.h>
 #include <vulkan/vulkan.h>
@@ -36,11 +39,10 @@
 
 #include "utils/boot_api.h"
 #include "utils/boot_diagnostics.hpp"
+#include "switch2_display.hpp"
 
 namespace
 {
-
-double scaleFactor = 1.0;
 
 const char* glString(GLenum name)
 {
@@ -200,53 +202,6 @@ void reportGraphicsCapabilities()
     reportVulkanDevice();
 }
 
-// The NRO draws to the console's own surface. Handheld is 1920x1080; docked may
-// report more, but the software decode baseline has no room for a 4K
-// framebuffer, so 1080p is the cap.
-void nativeWindowSize(uint32_t& width, uint32_t& height)
-{
-    s32 displayWidth = 0, displayHeight = 0;
-    const Result rc  = appletGetDefaultDisplayResolution(&displayWidth, &displayHeight);
-    if (R_SUCCEEDED(rc) && displayWidth > 0 && displayHeight > 0)
-    {
-        width  = static_cast<uint32_t>(displayWidth);
-        height = static_cast<uint32_t>(displayHeight);
-    }
-    if (width > 1920)
-    {
-        height = height * 1920 / width;
-        width  = 1920;
-    }
-    if (height > 1080)
-    {
-        width  = width * 1080 / height;
-        height = 1080;
-    }
-}
-
-void onWindowResized(SDL_Window* window)
-{
-    int width, height;
-    SDL_GetWindowSize(window, &width, &height);
-    int fWidth, fHeight;
-    SDL_GL_GetDrawableSize(window, &fWidth, &fHeight);
-    if (!fWidth || !fHeight) return;
-
-    scaleFactor = width > 0 ? fWidth * 1.0 / width : 1.0;
-    glViewport(0, 0, fWidth, fHeight);
-    brls::Application::onWindowResized(fWidth, fHeight);
-}
-
-int sdlWindowEventWatcher(void* data, SDL_Event* event)
-{
-    if (event->type == SDL_WINDOWEVENT && event->window.event == SDL_WINDOWEVENT_RESIZED)
-    {
-        SDL_Window* window = SDL_GetWindowFromID(event->window.windowID);
-        if (window == static_cast<SDL_Window*>(data)) onWindowResized(window);
-    }
-    return 0;
-}
-
 } // namespace
 
 namespace brls
@@ -254,7 +209,9 @@ namespace brls
 
 SDLVideoContext::SDLVideoContext(std::string windowTitle, uint32_t windowWidth, uint32_t windowHeight, float, float)
 {
-    nativeWindowSize(windowWidth, windowHeight);
+    const wili::Framebuffer preferred = wili::preferredWindowSize(windowWidth, windowHeight);
+    windowWidth                       = preferred.width;
+    windowHeight                      = preferred.height;
     brls::Logger::info("switch2: requesting a {}x{} window", windowWidth, windowHeight);
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0)
@@ -317,16 +274,18 @@ SDLVideoContext::SDLVideoContext(std::string windowTitle, uint32_t windowWidth, 
     }
 
     setSwapInterval(VideoContext::swapInterval);
-    SDL_AddEventWatch(sdlWindowEventWatcher, this->window);
+
+    // From here the display module owns the framebuffer: it opens the display
+    // change event, asks applet and vi2 what the console drives, sets the window
+    // size and the GL viewport, and reports the result in boot.log. Dock and
+    // undock are handled by the same code, from the platform's main loop.
+    wili::displayInitialize(this->window);
+
+    const wili::Framebuffer framebuffer = wili::displayFramebuffer();
+    Application::setWindowSize(framebuffer.width, framebuffer.height);
 
     int width, height;
     SDL_GetWindowSize(this->window, &width, &height);
-
-    int fWidth, fHeight;
-    SDL_GL_GetDrawableSize(this->window, &fWidth, &fHeight);
-    scaleFactor = width > 0 ? fWidth * 1.0 / width : 1.0;
-    Application::setWindowSize(fWidth, fHeight);
-    glViewport(0, 0, fWidth, fHeight);
 
     int xPos, yPos;
     SDL_GetWindowPosition(this->window, &xPos, &yPos);
@@ -351,7 +310,11 @@ void SDLVideoContext::endFrame()
 void SDLVideoContext::setSwapInterval(int interval)
 {
     VideoContext::swapInterval = interval;
-    SDL_GL_SetSwapInterval(interval);
+    if (SDL_GL_SetSwapInterval(interval) < 0)
+        brls::Logger::warning("switch2: SDL_GL_SetSwapInterval({}) failed: {}", interval, SDL_GetError());
+    // -1 means "adaptive vsync was requested and is not supported". The loop
+    // presents once per iteration, so what it actually got is the panel rate.
+    brls::Logger::info("switch2: swap interval {} (effective {})", interval, SDL_GL_GetSwapInterval());
 }
 
 void SDLVideoContext::clear(NVGcolor color)
@@ -371,7 +334,7 @@ void SDLVideoContext::resetState()
 
 double SDLVideoContext::getScaleFactor()
 {
-    return scaleFactor;
+    return wili::displayScaleFactor();
 }
 
 SDLVideoContext::~SDLVideoContext()
