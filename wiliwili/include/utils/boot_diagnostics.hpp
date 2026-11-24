@@ -46,6 +46,12 @@ std::string configDirForPlatform(const char* platformId);
 // port ships without third-party telemetry.
 bool telemetryEnabledForPlatform(const char* platformId);
 
+// Default of SettingItem::TLS_VERIFY for a port. Switch 2 verifies certificates:
+// its libcurl is built against the console's own ssl service, which implements
+// peer and hostname verification. Switch 1, PSV and PS4 keep the historical
+// value so an existing install does not start failing requests on update.
+bool tlsVerifyDefaultForPlatform(const char* platformId);
+
 struct GpuDiagnosticField {
     std::string name;
     std::string value;

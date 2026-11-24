@@ -46,6 +46,16 @@ bool telemetryEnabledForPlatform(const char* platformId) {
     return std::string{platformId} != "switch2";
 }
 
+bool tlsVerifyDefaultForPlatform(const char* platformId) {
+    if (platformId == nullptr) return false;
+    const std::string id{platformId};
+    // Switch 1 and the PlayStation ports hand TLS to a stack this repository
+    // does not verify against, and their installs keep whatever the old default
+    // was. Switch 2 is the first port whose default is verification.
+    if (id == "switch" || id == "psv" || id == "ps4") return false;
+    return true;
+}
+
 std::string sanitizeLogValue(const std::string& value, size_t maxLength) {
     std::string out;
     out.reserve(value.size());

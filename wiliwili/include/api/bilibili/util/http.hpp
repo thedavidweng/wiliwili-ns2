@@ -7,6 +7,9 @@
 #include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
 
+#include <mutex>
+#include <vector>
+
 #include "bilibili/util/md5.hpp"
 #include "bilibili/util/json.hpp"
 #include "bilibili/util/wbi.hpp"
@@ -30,17 +33,13 @@ using ErrorCallback = std::function<void(const std::string&, int code)>;
 class CurlSharedObject {
 public:
     CurlSharedObject() {
-        share = curl_share_init();
-        curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
-        // TODO: 下列两个选线不支持多线程，需要实现自定义线程池，每个线程共享一个 curl share 对象
-        // curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
-        // curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
-        curl_share_setopt(share, CURLSHOPT_LOCKFUNC, lock_callback);
-        curl_share_setopt(share, CURLSHOPT_UNLOCKFUNC, unlock_callback);
-        curl_share_setopt(share, CURLSHOPT_USERDATA, lock_array);
+        share = createShare();
     }
     ~CurlSharedObject() {
         curl_share_cleanup(share);
+        for (CURLSH* retired_share : retired) {
+            curl_share_cleanup(retired_share);
+        }
     }
 
     static void lock_callback(CURL *handle, curl_lock_data data, curl_lock_access access, void *userptr) {
@@ -54,11 +53,41 @@ public:
     }
 
     CURLSH* getShare() {
+        std::lock_guard<std::mutex> lock(guard);
         return share;
     }
 
+    // curl keeps DNS answers inside the share object and has no call to flush
+    // them. After a Switch 2 sleep/wake or a Wi-Fi drop those answers can belong
+    // to a network the console is no longer on, so the next request gets a fresh
+    // share. Handles that already hold the old one keep it alive (curl does not
+    // allow freeing a share a handle is using), so it is released with this
+    // object instead of immediately.
+    void resetDnsCache() {
+        std::lock_guard<std::mutex> lock(guard);
+        CURLSH* fresh = createShare();
+        if (fresh == nullptr) return;
+        retired.push_back(share);
+        share = fresh;
+    }
+
 private:
+    CURLSH* createShare() {
+        CURLSH* new_share = curl_share_init();
+        if (new_share == nullptr) return nullptr;
+        curl_share_setopt(new_share, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS);
+        // TODO: 下列两个选线不支持多线程，需要实现自定义线程池，每个线程共享一个 curl share 对象
+        // curl_share_setopt(new_share, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION);
+        // curl_share_setopt(new_share, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
+        curl_share_setopt(new_share, CURLSHOPT_LOCKFUNC, lock_callback);
+        curl_share_setopt(new_share, CURLSHOPT_UNLOCKFUNC, unlock_callback);
+        curl_share_setopt(new_share, CURLSHOPT_USERDATA, lock_array);
+        return new_share;
+    }
+
     CURLSH* share;
+    std::vector<CURLSH*> retired;
+    std::mutex guard;
     std::recursive_mutex lock_array[CURL_LOCK_DATA_LAST];
 };
 
@@ -79,6 +108,13 @@ public:
     static inline CurlSharedObject CURL_SHARE;
 
     static std::string getEncodedCookie(const cpr::Cookies& cookies);
+
+    // Drops the shared DNS cache. Called by the Switch 2 platform after the
+    // console wakes up, because the answers it holds can belong to a network
+    // the console is no longer on.
+    static void resetDnsCache() {
+        HTTP::CURL_SHARE.resetDnsCache();
+    }
 
     static std::shared_ptr<cpr::Session> createSession() {
         auto session = std::make_shared<cpr::Session>();
