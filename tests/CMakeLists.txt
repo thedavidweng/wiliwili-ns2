@@ -25,6 +25,16 @@ target_compile_definitions(wiliwili_boot_test PRIVATE
         WILIWILI_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 add_test(NAME boot_diagnostics COMMAND wiliwili_boot_test)
 
+# The Switch 2 input, IME and font decisions (#4). The pure headers have no
+# <switch.h>, so the host can compile and run them; everything that talks to the
+# hardware is verified on a console through G1.
+add_executable(wiliwili_switch2_input_test switch2_input_test.cpp)
+set_target_properties(wiliwili_switch2_input_test PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON)
+target_include_directories(wiliwili_switch2_input_test PRIVATE ${PROJECT_SOURCE_DIR}/platform/switch2)
+add_test(NAME switch2_input COMMAND wiliwili_switch2_input_test)
+
 # Audits a Switch 2 build tree (NRO header, RomFS contents, linker map). The
 # script skips itself when the cross toolchain or the artifacts are absent, so
 # this stays green on a desktop-only checkout.
