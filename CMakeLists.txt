@@ -201,8 +201,14 @@ if (WIN32)
 elseif (PLATFORM_PSV)
     configure_file("${CMAKE_SOURCE_DIR}/wiliwili/app_vita.xml.in" "${CMAKE_BINARY_DIR}/template.xml")
 elseif (PLATFORM_SWITCH)
-    # System service initialization functions required for libnx
-    list(APPEND MAIN_SRC ${BOREALIS_LIBRARY}/lib/platforms/switch/switch_wrapper.c)
+    if (PLATFORM_SWITCH2)
+        # Switch 2 keeps its own entry point in this repository: it records every
+        # service stage in boot.log and reports a failed boot on a text console.
+        list(APPEND MAIN_SRC ${CMAKE_SOURCE_DIR}/platform/switch2/switch2_wrapper.c)
+    else ()
+        # System service initialization functions required for libnx
+        list(APPEND MAIN_SRC ${BOREALIS_LIBRARY}/lib/platforms/switch/switch_wrapper.c)
+    endif ()
 elseif (PLATFORM_PS4)
     # Show backtrace when app crash
     list(APPEND MAIN_SRC ${BOREALIS_LIBRARY}/lib/platforms/ps4/crashlog.c)
@@ -311,25 +317,60 @@ elseif (PLATFORM_PS4)
     )
     add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}.data)
 elseif (PLATFORM_SWITCH)
-    set(BUILD_FONT_DIR ${CMAKE_BINARY_DIR}/resources/font)
     if (GIT_TAG_VERSION)
         string(SUBSTRING ${GIT_TAG_VERSION} 1 -1 APP_VERSION)
     endif ()
+    if (PLATFORM_SWITCH2)
+        # wiliwili-NS2.nro, with the unstripped wiliwili-NS2.elf next to it.
+        set(APP_ARTIFACT_NAME wiliwili-NS2)
+        set(APP_TITLE wiliwili-NS2)
+        set(APP_AUTHOR "xfangfang and wiliwili-NS2 contributors")
+    else ()
+        set(APP_ARTIFACT_NAME ${PROJECT_NAME})
+        set(APP_TITLE ${PROJECT_NAME})
+        set(APP_AUTHOR ${PROJECT_AUTHOR})
+    endif ()
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ${APP_ARTIFACT_NAME})
+
+    set(APP_ROMFS_DIR ${CMAKE_BINARY_DIR}/resources)
+    set(BUILD_FONT_DIR ${APP_ROMFS_DIR}/font)
     if (BUILTIN_NSP)
         add_dependencies(${PROJECT_NAME} nsp_forwarder.nsp)
     endif ()
     if (USE_DEKO3D)
         gen_dksh("${PROJECT_RESOURCES}/shaders")
     endif ()
-    add_custom_target(${PROJECT_NAME}.nro
+
+    # The RomFS of the NRO: the UI framework's own assets first (window icons,
+    # cursor, Material icons), then wiliwili's. Switch 1 only ships wiliwili's,
+    # because its resources/ carries its own copies of those.
+    set(ROMFS_STAGING COMMAND ${CMAKE_COMMAND} -E remove_directory ${APP_ROMFS_DIR})
+    if (PLATFORM_SWITCH2)
+        list(APPEND ROMFS_STAGING
+                COMMAND ${CMAKE_COMMAND} -E copy_directory ${BOREALIS_DIR}/resources ${APP_ROMFS_DIR})
+    endif ()
+    list(APPEND ROMFS_STAGING
+            COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_RESOURCES} ${APP_ROMFS_DIR}
+            # Switch 1 assets that are either proprietary, or unused on a device
+            # that provides them through the system shared fonts
+            # (SwitchFontLoader only asks pl for those). The licence texts next
+            # to them stay in the RomFS.
+            COMMAND ${CMAKE_COMMAND} -E remove -f
+                ${BUILD_FONT_DIR}/switch_font.ttf
+                ${BUILD_FONT_DIR}/switch_icons.ttf
+                ${BUILD_FONT_DIR}/keymap_xbox.ttf
+                ${BUILD_FONT_DIR}/keymap_ps.ttf
+                ${BUILD_FONT_DIR}/keymap_keyboard.ttf
+                ${BUILD_FONT_DIR}/keymap_keyboard_swap.ttf)
+
+    # ALL has to come before the first COMMAND: written after it, CMake passes it
+    # to elf2nro as an argument and the NRO never joins the default target.
+    add_custom_target(${APP_ARTIFACT_NAME}.nro ALL
         DEPENDS ${PROJECT_NAME}
-        COMMAND ${NX_NACPTOOL_EXE} --create ${PROJECT_NAME} ${PROJECT_AUTHOR} ${APP_VERSION} ${PROJECT_NAME}.nacp
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_RESOURCES} ${CMAKE_BINARY_DIR}/resources
-        COMMAND ${CMAKE_COMMAND} -E remove -f ${BUILD_FONT_DIR}/*.txt ${BUILD_FONT_DIR}/switch_font.ttf
-            ${BUILD_FONT_DIR}/keymap*.ttf
-        COMMAND ${NX_ELF2NRO_EXE} ${PROJECT_NAME}.elf ${PROJECT_NAME}.nro --icon=${PROJECT_ICON}
-            --nacp=${PROJECT_NAME}.nacp --romfsdir=${CMAKE_BINARY_DIR}/resources
-        ALL
+        COMMAND ${NX_NACPTOOL_EXE} --create "${APP_TITLE}" "${APP_AUTHOR}" ${APP_VERSION} ${APP_ARTIFACT_NAME}.nacp
+        ${ROMFS_STAGING}
+        COMMAND ${NX_ELF2NRO_EXE} ${APP_ARTIFACT_NAME}.elf ${APP_ARTIFACT_NAME}.nro --icon=${PROJECT_ICON}
+            --nacp=${APP_ARTIFACT_NAME}.nacp --romfsdir=${APP_ROMFS_DIR}
     )
 endif ()
 

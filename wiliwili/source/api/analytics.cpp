@@ -9,6 +9,7 @@
 #include <fmt/format.h>
 #include <cpr/cpr.h>
 #include "utils/config_helper.hpp"
+#include "utils/boot_diagnostics.hpp"
 #include "utils/number_helper.hpp"
 #include "api/bilibili/util/http.hpp"
 #include <borealis/core/thread.hpp>
@@ -30,6 +31,10 @@ void Analytics::report(const Event& event) {
 }
 
 void Analytics::send() {
+    // Second line of defence behind the compile time NO_GA switch: the Switch 2
+    // port reports nothing, whatever the build options were.
+    if (!wili::telemetryEnabledForPlatform(wili::PLATFORM_ID)) return;
+
     Package package;
     events_mutex.lock();
     if (events.size() > REPORT_MAX_NUM) {
@@ -84,6 +89,11 @@ Analytics::Analytics() {
     brls::Logger::debug("Analytics url: {}", GA_URL);
     this->app_version = APPVersion::instance().getVersionStr();
     this->client_id   = "GA1.3." + ProgramConfig::instance().getClientID();
+
+    if (!wili::telemetryEnabledForPlatform(wili::PLATFORM_ID)) {
+        brls::Logger::info("Analytics disabled on this platform");
+        return;
+    }
 
     reportTimer.setCallback([]() { brls::Threading::async([]() { Analytics::instance().send(); }); });
     reportTimer.start(10000);

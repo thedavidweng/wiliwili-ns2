@@ -4,24 +4,39 @@
 #   scripts/switch2/build.sh image       build wiliwili-ns2-toolchain:local
 #   scripts/switch2/build.sh configure   cmake --preset switch2-release
 #   scripts/switch2/build.sh build       cmake --build --preset switch2-release
+#   scripts/switch2/build.sh audit       audit the NRO, RomFS and linker map
 #   scripts/switch2/build.sh <command>   run any command in the container
 #
-# WILIWILI_SWITCH2_IMAGE overrides the image name.
+# WILIWILI_SWITCH2_IMAGE overrides the image name, WILIWILI_SWITCH2_JOBS the
+# number of parallel compile jobs.
 set -eu
 
 root="$(cd "$(dirname "$0")/../.." && pwd -P)"
 image="${WILIWILI_SWITCH2_IMAGE:-wiliwili-ns2-toolchain:local}"
 
 run() {
-    docker run --rm -v "${root}:/src" -w /src "${image}" "$@"
+    docker run --rm -e WILIWILI_SWITCH2_JOBS="${WILIWILI_SWITCH2_JOBS:-}" \
+        -v "${root}:/src" -w /src "${image}" "$@"
 }
 
 case "${1:-}" in
     image) docker build -f "${root}/scripts/switch2/Dockerfile" -t "${image}" "${root}" ;;
     configure) run cmake --preset switch2-release ;;
-    build) run cmake --build --preset switch2-release ;;
+    # cc1plus needs around 1.2 GB for the heavy translation units (the vendored
+    # headers plus -g), so a small container gets one job and a large one gets
+    # every core. Set WILIWILI_SWITCH2_JOBS to override.
+    build)
+        run sh -c 'jobs="${WILIWILI_SWITCH2_JOBS:-}"
+                   if [ -z "${jobs}" ]; then
+                       mem_mb=$(awk "/^MemTotal:/ { print int(\$2 / 1024) }" /proc/meminfo)
+                       if [ "${mem_mb}" -lt 4096 ]; then jobs=1; else jobs=$(nproc); fi
+                   fi
+                   echo "building with -j ${jobs}"
+                   cmake --build --preset switch2-release -j "${jobs}"'
+        ;;
+    audit) run sh /src/scripts/switch2/audit-nro.sh /src/build/switch2-release ;;
     "")
-        echo "usage: $0 {image|configure|build|<command>}" >&2
+        echo "usage: $0 {image|configure|build|audit|<command>}" >&2
         exit 1
         ;;
     *)

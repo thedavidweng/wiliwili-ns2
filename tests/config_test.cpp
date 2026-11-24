@@ -231,7 +231,10 @@ void check_presets() {
         // SDL2 + EGL on top of OunceVK.
         CHECK(at(switch2, cache + "USE_SDL2") == "ON");
         CHECK(at(switch2, cache + "USE_EGL") == "ON");
-        CHECK(at(switch2, cache + "USE_LIBROMFS") == "ON");
+        // The RomFS comes from the NRO's own --romfsdir section: libromfs would
+        // embed every asset a second time as a C++ array, which also turns
+        // OpenCC off and does not fit in the 2 GB build container.
+        CHECK(at(switch2, cache + "USE_LIBROMFS") == "OFF");
         CHECK(at(switch2, cache + "CMAKE_BUILD_TYPE") == "Release");
         CHECK(at(switch2, "toolchainFile").get<std::string>().find(
                       "libounce/cmake/Switch2.cmake") != std::string::npos);
@@ -249,6 +252,13 @@ void check_presets() {
     for (const char* name : {"desktop-debug", "desktop-release", "switch2-release"}) {
         CHECK(!find_named(at(presets, "buildPresets"), name).is_null());
     }
+    const json switch2_build = find_named(at(presets, "buildPresets"), "switch2-release");
+    if (!switch2_build.is_null()) {
+        // The preset builds the NRO, and the ELF with the debug symbols is a
+        // by-product of it.
+        const json targets = at(switch2_build, "targets");
+        CHECK(targets.is_array() && targets.size() == 1 && targets[0] == "wiliwili-NS2.nro");
+    }
     const json test_preset = find_named(at(presets, "testPresets"), "desktop-release");
     if (test_preset.is_null()) {
         std::cerr << "FAIL: missing test preset desktop-release\n";
@@ -263,14 +273,31 @@ void check_switch2_wiring() {
     CHECK(cmake.find("option(PLATFORM_SWITCH2") != std::string::npos);
     CHECK(cmake.find("option(WILIWILI_BUILD_TESTS") != std::string::npos);
     CHECK(cmake.find("cmake/Switch2Platform.cmake") != std::string::npos);
+    // The NRO and the ELF are named for the port, the NACP keeps the upstream
+    // author, and the RomFS is staged from both resource trees.
+    CHECK(cmake.find("wiliwili-NS2") != std::string::npos);
+    CHECK(cmake.find("xfangfang and wiliwili-NS2 contributors") != std::string::npos);
+    CHECK(cmake.find("platform/switch2/switch2_wrapper.c") != std::string::npos);
+    CHECK(cmake.find("${BOREALIS_DIR}/resources ${APP_ROMFS_DIR}") != std::string::npos);
+    CHECK(cmake.find("switch_font.ttf") != std::string::npos);
 
     const std::string platform = read("cmake/Switch2Platform.cmake");
-    // NX_ROOT and the find prefixes point at the [ounce] devkit, and the host
-    // libromfs-generator is handed to borealis instead of being cross-compiled.
+    // NX_ROOT and the find prefixes point at the [ounce] devkit.
     CHECK(platform.find("libounce") != std::string::npos);
     CHECK(platform.find("portlibs/switch2") != std::string::npos);
     CHECK(platform.find("__dkp_platform_prefix") != std::string::npos);
-    CHECK(platform.find("LIBROMFS_PREBUILT_GENERATOR") != std::string::npos);
+    // The port reports no telemetry, so analytics.h compiles without its
+    // endpoint and key.
+    CHECK(platform.find("NO_GA") != std::string::npos);
+    // libromfs would embed the resources a second time; Switch 2 uses the NRO's
+    // romfs section instead.
+    CHECK(platform.find("LIBROMFS_PREBUILT_GENERATOR") == std::string::npos);
+
+    // The Switch 2 SDL backend is kept in this repository and replaces the one
+    // in the pinned Borealis submodule.
+    const std::string library = read("library/CMakeLists.txt");
+    CHECK(library.find("platform/switch2/sdl_video.cpp") != std::string::npos);
+    CHECK(library.find("HEADER_FILE_ONLY TRUE") != std::string::npos);
 }
 
 }  // namespace

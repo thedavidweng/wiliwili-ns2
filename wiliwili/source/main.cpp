@@ -11,15 +11,34 @@
 
 #include <borealis.hpp>
 
+#include <cstdlib>
+#include <exception>
+
 #include "utils/config_helper.hpp"
 #include "utils/activity_helper.hpp"
+#include "utils/boot_diagnostics.hpp"
+#include "utils/boot_api.h"
 #include "view/mpv_core.hpp"
 
 #ifdef IOS
 #include <SDL2/SDL_main.h>
 #endif
 
-int main(int argc, char* argv[]) {
+namespace {
+
+// On a console there is no terminal to read a failed boot from: leave the
+// reason in {configDir}/boot.log and let the Switch 2 wrapper show it on a text
+// console before the app exits.
+[[noreturn]] void failBoot(const std::string& reason) {
+    brls::Logger::error("boot failed: {}", reason);
+    wili::bootNote("fatal", reason);
+#ifdef __SWITCH2__
+    wiliwili_boot_panic(reason.c_str());
+#endif
+    std::exit(EXIT_FAILURE);
+}
+
+int run(int argc, char* argv[]) {
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "-d") == 0) {
             brls::Logger::setLogLevel(brls::LogLevel::LOG_DEBUG);
@@ -33,19 +52,26 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    wili::bootNote("main", "wiliwili-NS2 booting");
+
     // Load cookies and settings
     ProgramConfig::instance().init();
+    wili::bootNote("config", "settings loaded from " + ProgramConfig::instance().getConfigDir());
 
     // Init the app and i18n
     if (!brls::Application::init()) {
-        brls::Logger::error("Unable to init application");
-        return EXIT_FAILURE;
+        failBoot("brls::Application::init() failed");
     }
+    wili::bootNote("platform", "borealis platform " + brls::Application::getPlatform()->getName());
 
     // Return directly to the desktop when closing the application (only for NX)
     brls::Application::getPlatform()->exitToHomeMode(true);
 
     brls::Application::createWindow("wiliwili");
+    wili::bootNote("window", fmt::format("{}x{} drawable, {}x{} logical, scale {}",
+                                          brls::Application::windowWidth, brls::Application::windowHeight,
+                                          brls::Application::contentWidth, brls::Application::contentHeight,
+                                          brls::Application::windowScale));
     brls::Logger::info("createWindow done");
 
     // Register custom view\theme\style
@@ -99,12 +125,25 @@ int main(int argc, char* argv[]) {
     }
 
     brls::Logger::info("mainLoop done");
+    wili::bootNote("main", "main loop finished");
 
     // Cleanup curl and Check whether restart is required
     ProgramConfig::instance().exit(argv);
 
     // Exit
     return EXIT_SUCCESS;
+}
+
+}  // namespace
+
+int main(int argc, char* argv[]) {
+    try {
+        return run(argc, argv);
+    } catch (const std::exception& e) {
+        // brls::fatal throws: a failed GL context, nanovg or RomFS setup lands
+        // here instead of going down as a black screen.
+        failBoot(e.what());
+    }
 }
 
 #ifdef __WINRT__

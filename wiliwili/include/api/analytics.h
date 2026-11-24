@@ -21,7 +21,13 @@ namespace analytics {
 #define STR_IMPL(x) #x
 #define STR(x) STR_IMPL(x)
 
-#ifdef ANALYTICS
+#ifdef NO_GA
+// This build sends no telemetry at all: no endpoint, no identifier, and no key
+// compiled into the binary.
+const std::string GA_ID  = "";
+const std::string GA_KEY = "";
+const std::string GA_URL = "";
+#elif defined(ANALYTICS)
 // custom Google Analytics id/key
 const std::string GA_ID  = STR(ANALYTICS_ID);
 const std::string GA_KEY = STR(ANALYTICS_KEY);

@@ -41,7 +41,7 @@
       "name": "switch2-release",
       "inherits": "base",
       "displayName": "Switch 2 (Release)",
-      "description": "NS2 NRO with libounce and OunceVK (EGL/GLES through Zink), software decoding, no NSP forwarder and no deko3d.",
+      "description": "NS2 NRO with libounce and OunceVK (EGL/GLES through Zink), software decoding, no NSP forwarder, no deko3d and no RomFS C++ embedding.",
       "toolchainFile": "$env{DEVKITPRO}/libounce/cmake/Switch2.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
@@ -52,7 +52,7 @@
         "USE_SDL2": "ON",
         "USE_EGL": "ON",
         "USE_GLES2": "ON",
-        "USE_LIBROMFS": "ON",
+        "USE_LIBROMFS": "OFF",
         "CMAKE_C_FLAGS_RELEASE": "-O2 -g -DNDEBUG",
         "CMAKE_CXX_FLAGS_RELEASE": "-O2 -g -DNDEBUG"
       }
@@ -71,7 +71,7 @@
       "name": "switch2-release",
       "configurePreset": "switch2-release",
       "targets": [
-        "wiliwili.nro"
+        "wiliwili-NS2.nro"
       ]
     }
   ],

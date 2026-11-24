@@ -24,6 +24,7 @@
 #include "utils/thread_helper.hpp"
 #include "utils/image_helper.hpp"
 #include "utils/config_helper.hpp"
+#include "utils/boot_diagnostics.hpp"
 
 #include "pystring.h"
 #include "utils/crash_helper.hpp"
@@ -198,9 +199,11 @@ std::unordered_map<SettingItem, ProgramOption> ProgramConfig::SETTING_MAP = {
     {SettingItem::PLAYER_HIGHLIGHT_BAR, {"player_highlight_bar", {}, {}, 0}},
     {SettingItem::PLAYER_SKIP_OPENING_CREDITS, {"player_skip_opening_credits", {}, {}, 1}},
     {SettingItem::PLAYER_LOW_QUALITY, {"player_low_quality", {}, {}, 1}},
-#if defined(IOS) || defined(__PSV__) || defined(__SWITCH__)
+#if defined(IOS) || defined(__PSV__) || (defined(__SWITCH__) && !defined(__SWITCH2__))
     {SettingItem::PLAYER_HWDEC, {"player_hwdec", {}, {}, 1}},
 #else
+    // The Switch 2 baseline decodes in software: the [ounce] stack has no mpv
+    // hardware decode backend yet.
     {SettingItem::PLAYER_HWDEC, {"player_hwdec", {}, {}, 0}},
 #endif
     {SettingItem::PLAYER_HWDEC_CUSTOM, {"player_hwdec_custom", {}, {}, 0}},
@@ -1135,12 +1138,10 @@ std::string ProgramConfig::getHomePath() {
 }
 
 std::string ProgramConfig::getConfigDir() {
-#ifdef __SWITCH__
-    return "/config/wiliwili";
-#elif defined(PS4)
-    return "/data/wiliwili";
-#elif defined(__PSV__)
-    return "ux0:/data/wiliwili";
+#if defined(__SWITCH__) || defined(__PSV__) || defined(PS4)
+    // Console ports keep their settings in a fixed directory, and Switch 2 has
+    // its own: a Switch 1 install on the same SD card is never touched.
+    return wili::configDirForPlatform(wili::PLATFORM_ID);
 #elif defined(IOS)
     CFURLRef homeURL = CFCopyHomeDirectoryURL();
     if (homeURL != nullptr) {
@@ -1151,8 +1152,7 @@ std::string ProgramConfig::getConfigDir() {
         return std::string{buffer} + "/Library/Preferences";
     }
     return "../Library/Preferences";
-#else
-#ifdef _DEBUG
+#elif defined(_DEBUG)
     char currentPathBuffer[PATH_MAX];
     std::string currentPath = getcwd(currentPathBuffer, sizeof(currentPathBuffer));
 #ifdef _WIN32
@@ -1160,26 +1160,23 @@ std::string ProgramConfig::getConfigDir() {
 #else
     return currentPath + "/config/wiliwili";
 #endif /* _WIN32 */
-#else
-#ifdef __APPLE__
+#elif defined(__APPLE__)
     return std::string(getenv("HOME")) + "/Library/Application Support/wiliwili";
-#endif
-#ifdef __linux__
-    std::string config = "";
-    char* config_home  = getenv("XDG_CONFIG_HOME");
+#elif defined(__linux__)
+    std::string config   = "";
+    char* config_home    = getenv("XDG_CONFIG_HOME");
     if (config_home) config = std::string(config_home);
     if (config.empty()) config = std::string(getenv("HOME")) + "/.config";
     return config + "/wiliwili";
-#endif
-#ifdef _WIN32
+#elif defined(_WIN32)
     WCHAR wpath[MAX_PATH];
     std::vector<char> lpath(MAX_PATH);
     SHGetSpecialFolderPathW(0, wpath, CSIDL_LOCAL_APPDATA, false);
     WideCharToMultiByte(CP_UTF8, 0, wpath, std::wcslen(wpath), lpath.data(), lpath.size(), nullptr, nullptr);
     return std::string(lpath.data()) + "\\xfangfang\\wiliwili";
+#else
+#error "No config directory for this platform: add it here and to wili::configDirForPlatform"
 #endif
-#endif /* _DEBUG */
-#endif /* __SWITCH__ */
 }
 
 void ProgramConfig::exit(char* argv[]) {

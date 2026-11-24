@@ -364,7 +364,11 @@ public:
     inline static bool HARDWARE_DEC = false;
 
     // 硬解方式
-#if defined(__SWITCH__) || defined(BOREALIS_USE_GXM)
+#if defined(__SWITCH2__)
+    // No mpv hardware decode backend for the [ounce] Vulkan stack: the Switch 2
+    // baseline is software decoding.
+    inline static std::string PLAYER_HWDEC_METHOD = "no";
+#elif defined(__SWITCH__) || defined(BOREALIS_USE_GXM)
     inline static std::string PLAYER_HWDEC_METHOD = "auto";
 #elif defined(__PSV__)
     inline static std::string PLAYER_HWDEC_METHOD = "vita-copy";

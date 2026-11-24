@@ -190,6 +190,7 @@ Default hardware decode: Switch and PSV-GXM (`BOREALIS_USE_GXM`) → `"auto"`, P
 | Platform | Path |
 |---|---|
 | Nintendo Switch | `/config/wiliwili/` |
+| Nintendo Switch 2 | `/config/wiliwili-ns2/` (settings and `boot.log`; Switch 1's directory is never touched) |
 | PS4 | `/data/wiliwili/` |
 | PSVita | `ux0:/data/wiliwili/` |
 | macOS (release) | `~/Library/Application Support/wiliwili/` |
@@ -230,11 +231,17 @@ cmake --build build/install -j$(nproc) && sudo cmake --install build/install
 ```sh
 scripts/switch2/build.sh image        # devkita64 + [ounce] libounce/OunceVK/libkaihen + FFmpeg 7.1/mpv 0.36.0
 scripts/switch2/build.sh configure    # cmake --preset switch2-release
-scripts/switch2/build.sh build        # wiliwili.nro + unstripped wiliwili.elf
+scripts/switch2/build.sh build        # wiliwili-NS2.nro + unstripped wiliwili-NS2.elf
+scripts/switch2/build.sh audit        # NRO, RomFS and linker map checks
 ```
-The image and every package in it are pinned in `UPSTREAM.json`;
+The image and every package in it is pinned in `UPSTREAM.json`;
 `cmake/Switch2Platform.cmake` re-applies the libounce platform after Borealis'
-Switch 1 toolchain branch. Docker needs ~8 GB to build the NRO.
+Switch 1 toolchain branch. `build` picks `-j 1` when the container has less than
+4 GB of RAM, because `cc1plus` is OOM-killed otherwise. The Switch 2 sources kept
+in this repository (`platform/switch2/`) replace Borealis' SDL video backend and
+entry point, so `library/borealis` stays at its pinned commit. Settings and
+`boot.log` live in `/config/wiliwili-ns2/`, never in Switch 1's
+`/config/wiliwili/`.
 
 ### Nintendo Switch (Docker, recommended)
 ```sh
@@ -330,7 +337,9 @@ docker run --rm -v $(pwd):/src/ xfangfang/wiliwili_ps4_builder:latest \
 | `CMakePresets.json` | Authoritative Ninja presets: `desktop-debug`, `desktop-release`, `switch2-release` |
 | `UPSTREAM.json` | Pinned upstream/reference commits, submodule gitlinks, container digest, package versions and sha256 |
 | `cmake/Switch2Platform.cmake` | Re-applies the libounce/OunceVK platform after Borealis' Switch 1 toolchain branch |
-| `scripts/switch2/` | Switch 2 container (`Dockerfile`) and helper (`build.sh`) |
+| `scripts/switch2/` | Switch 2 container (`Dockerfile`), helper (`build.sh`) and artifact audit (`audit-nro.sh`) |
+| `platform/switch2/` | Switch 2 replacements for Borealis' SDL video backend and entry point, used only with `PLATFORM_SWITCH2=ON` |
+| `wiliwili/include/utils/boot_diagnostics.hpp` | `boot.log` notes, config namespaces, GPU report formatting |
 | `tests/config_test.cpp` | Host checks for the pins and the Switch 2 configuration (`WILIWILI_BUILD_TESTS=ON`) |
 | `docs/building.md` | Build commands and the verified Switch 2 SDK capability review |
 | `scripts/` | Build scripts for each platform; `README.md` covers custom ffmpeg/mpv for Switch |

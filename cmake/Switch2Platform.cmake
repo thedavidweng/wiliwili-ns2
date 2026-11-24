@@ -46,26 +46,7 @@ unset(CMAKE_CXX_FLAGS)
 # libraries) ends up in the NRO.
 list(APPEND APP_PLATFORM_LINK_OPTION "-Wl,-Map=${CMAKE_BINARY_DIR}/wiliwili.map")
 
-# libromfs' generator is a host program. Cross-compiling it here would produce
-# an aarch64 binary the build host cannot run, so build it with the host
-# compiler during configure and hand borealis the result.
-if (USE_LIBROMFS AND NOT LIBROMFS_PREBUILT_GENERATOR)
-    set(generator_source "${BOREALIS_LIBRARY}/lib/extern/libromfs/generator")
-    set(generator_build "${CMAKE_BINARY_DIR}/libromfs-generator")
-    set(generator_args -S "${generator_source}" -B "${generator_build}"
-            -DCMAKE_BUILD_TYPE=Release -G "${CMAKE_GENERATOR}")
-    if (CMAKE_MAKE_PROGRAM AND CMAKE_GENERATOR MATCHES "Ninja")
-        list(APPEND generator_args -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM})
-    endif ()
-    execute_process(COMMAND "${CMAKE_COMMAND}" ${generator_args}
-            RESULT_VARIABLE generator_configure)
-    execute_process(COMMAND "${CMAKE_COMMAND}" --build "${generator_build}"
-            RESULT_VARIABLE generator_build_result)
-    set(generator_binary "${generator_build}/libromfs-generator${CMAKE_EXECUTABLE_SUFFIX}")
-    if (NOT generator_configure EQUAL 0 OR NOT generator_build_result EQUAL 0
-            OR NOT EXISTS "${generator_binary}")
-        message(FATAL_ERROR "Could not build the host libromfs-generator in ${generator_build}")
-    endif ()
-    message(STATUS "Switch 2: libromfs-generator: ${generator_binary}")
-    set(LIBROMFS_PREBUILT_GENERATOR "${generator_binary}" CACHE STRING "" FORCE)
-endif ()
+# This port ships without third-party telemetry: analytics.h then compiles
+# without an endpoint, an identifier or a key in the binary.
+set(ANALYTICS OFF CACHE BOOL "Using Google Analytics" FORCE)
+list(APPEND APP_PLATFORM_OPTION -DNO_GA)

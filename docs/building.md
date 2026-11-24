@@ -39,19 +39,27 @@ only install headers, static libraries and `.pc` files under
 ```sh
 scripts/switch2/build.sh image        # docker build -t wiliwili-ns2-toolchain:local
 scripts/switch2/build.sh configure    # cmake --preset switch2-release
-scripts/switch2/build.sh build        # wiliwili.nro (+ the unstripped wiliwili.elf)
+scripts/switch2/build.sh build        # wiliwili-NS2.nro (+ the unstripped wiliwili-NS2.elf)
+scripts/switch2/build.sh audit        # NRO, RomFS and linker map checks
 ```
+
+`build` sizes the job count to the container: `cc1plus` needs about 1.2 GB for
+the heavy translation units, so a 2 GB VM builds with `-j 1` and a larger one
+with every core. `WILIWILI_SWITCH2_JOBS` overrides it.
 
 The same by hand:
 
 ```sh
 docker build -f scripts/switch2/Dockerfile -t wiliwili-ns2-toolchain:local .
 docker run --rm -v "$PWD:/src" -w /src wiliwili-ns2-toolchain:local cmake --preset switch2-release
-docker run --rm -v "$PWD:/src" -w /src wiliwili-ns2-toolchain:local cmake --build --preset switch2-release
+docker run --rm -v "$PWD:/src" -w /src wiliwili-ns2-toolchain:local cmake --build --preset switch2-release -j 1
+docker run --rm -v "$PWD:/src" -w /src wiliwili-ns2-toolchain:local \
+    sh scripts/switch2/audit-nro.sh build/switch2-release
 ```
 
 Docker Desktop has to share the checkout (on macOS a path under `/Users`; `/tmp`
-is not shared by default).
+is not shared by default, and a bind mount of it comes up empty instead of
+failing).
 
 ### What the `switch2-release` preset sets
 
@@ -60,7 +68,7 @@ is not shared by default).
 | `PLATFORM_SWITCH` / `PLATFORM_SWITCH2` | `ON` | Borealis' Switch backend plus the libounce portlibs and GPU libraries |
 | `USE_SDL2`, `USE_EGL` | `ON` | SDL2 window/input on an EGL surface from OunceVK |
 | `USE_GLES2` | `ON` | Zink exposes GLES 3.1, but the GLES2 path is the one Borealis and MPVCore exercise today; GLES3 is deferred until device gate G1 |
-| `USE_LIBROMFS` | `ON` | one NRO with the resources inside it |
+| `USE_LIBROMFS` | `OFF` | the resources go into the NRO's own `--romfsdir` section, mounted by `romfsInit()` as `romfs:/`. Embedding them as a C++ array would duplicate every asset, turn OpenCC off, and OOM `cc1plus` in a 2 GB container |
 | `BUILTIN_NSP`, `USE_DEKO3D` | `OFF` | no Switch 1 NSP forwarder and no deko3d |
 | `CMAKE_C_FLAGS_RELEASE`, `CMAKE_CXX_FLAGS_RELEASE` | `-O2 -g -DNDEBUG` | `-O2` matches libounce's `switch2vars.sh`; `-g` keeps `wiliwili.elf` usable as a symbol source next to the stripped NRO |
 | `BRLS_UNITY_BUILD` | `OFF` | unity builds hide missing includes and break the Switch 2 include order |
@@ -77,8 +85,37 @@ and any clock or performance-mode change (the port does not overclock).
 `toolchain.cmake`, whose `PLATFORM_SWITCH` branch still configures the Switch 1
 devkit: it points `NX_ROOT` at `$DEVKITPRO/libounce`, puts
 `$DEVKITPRO/portlibs/switch2` and `$DEVKITPRO/libounce` in front of the Switch 1
-portlibs, and builds the host `libromfs-generator` during configure so the cross
-build never tries to run an aarch64 binary.
+portlibs, forces `ANALYTICS` off with `-DNO_GA` so the port compiles without the
+Google Analytics endpoint and key, and adds the link map the audit reads.
+
+### What the Switch 2 sources replace
+
+Two Switch 1 assumptions do not hold on the [ounce] devkit, and both live in
+this repository so `library/borealis` stays at its pinned commit:
+
+| File | Why |
+|---|---|
+| `platform/switch2/sdl_video.cpp` | Borealis' SDL backend asks for a desktop OpenGL 4.3 core context on any `__SWITCH__` build. Here the `#ifdef __SWITCH__` block is Switch 1 only, so Switch 2 gets the GLES2 context OunceVK provides, the window is created at the console's own handheld resolution, every failing SDL/GL call is reported, and the GL strings plus the NVK Vulkan device are written to `boot.log`. `library/CMakeLists.txt` sets the submodule's file to `HEADER_FILE_ONLY` and compiles this one instead |
+| `platform/switch2/switch2_wrapper.c` | `userAppInit`: same services as the Switch 1 wrapper, each stage recorded in `boot.log`; a boot that cannot start now reports on a text console instead of going black |
+
+`platform/switch2/compat/SDL2/SDL.h` exists because devkitPro's SDL2 only puts
+`.../portlibs/switch/include/SDL2` on the include path, and adding its parent
+would let the Switch 1 EGL, GLES and Vulkan headers shadow OunceVK's.
+
+### The NRO, the ELF and the RomFS
+
+`wiliwili-NS2.nro` is built with `nacptool` and `elf2nro` from the unstripped
+`wiliwili-NS2.elf`, which stays in the build directory as its symbol source. The
+NRO carries no debug information: a ~40 MB image against a ~300 MB ELF, and no
+source paths from the ELF appear in it. The NACP keeps the upstream author:
+title `wiliwili-NS2`, author `xfangfang and wiliwili-NS2 contributors`, version
+from `git describe` (the CMake version when the build has no git).
+
+The RomFS is staged into `build/switch2-release/resources` before `elf2nro`
+runs: Borealis' `resources/img/sys` and `resources/material` first, then
+wiliwili's `resources/`, minus the Switch 1 fonts that are either proprietary
+(`switch_font.ttf`, `switch_icons.ttf`) or unused because `SwitchFontLoader`
+reads the system shared fonts (`font/keymap_*.ttf`).
 
 ### Checking the result
 
@@ -92,42 +129,65 @@ At configure time the resolved link line starts with the Switch 2 libraries:
 There is no `-I/opt/devkitpro/libnx` anywhere in the generated build files, and
 `libnx.a` only exists in `$DEVKITPRO/libounce/lib`, so `-lnx` links libounce.
 OunceVK also installs empty `libGLESv2.a`, `libglapi.a` and `libdrm_nouveau.a`
-in `portlibs/switch2`, which shadow the Switch 1 copies. After a link,
-`build/switch2-release/wiliwili.map` answers the same question:
+in `portlibs/switch2`, which shadow the Switch 1 copies, and its `libEGL.a` /
+`libvulkan.a` are linker scripts that pull `libouncevk-gl.a` / `libouncevk.a`
+(Zink, NVK and the KHR/VK_NN surface code). After a link,
+`build/switch2-release/wiliwili.map` answers the same question, and
+`scripts/switch2/audit-nro.sh` runs every check at once:
 
 ```sh
 grep -E "/opt/devkitpro/libnx|portlibs/switch/lib/lib(EGL|glapi|drm_nouveau)" \
      build/switch2-release/wiliwili.map   # must print nothing
+scripts/switch2/build.sh audit
 ```
+
+The audit also checks the `HOMEBREWNRO0` header, the embedded NACP (title,
+author, version) and RomFS, that `wiliwili-NS2.elf` still carries `.debug_info`
+and `.symtab`, that the RomFS has the Borealis cursor and Material icons plus
+wiliwili's `xml`, `i18n` and `opencc` data and none of the proprietary fonts,
+and that no settings file or telemetry endpoint ended up in the artifact.
 
 ### Validation scope
 
-This ticket pins the toolchain, the presets and the platform wiring: the
-`switch2-release` configure completes with no errors and resolves every library
-as described above. The NRO does not link yet, because Borealis' Switch backend
-and MPVCore still target the Switch 1 GPU libraries; that port and its device
-gates are the follow-up tickets. The 313-target cross build was attempted here
-and stopped when `cc1plus` was OOM-killed at 97/313 in this machine's Docker VM
-(2 GB RAM, 2 CPUs). Give Docker Desktop at least 8 GB before building the NRO.
+The cross build completes in the 2 GB container (`scripts/switch2/build.sh build`
+picks `-j 1` there): `wiliwili-NS2.nro` and `wiliwili-NS2.elf` link against
+libounce and OunceVK only, and the audit above passes. Nothing here has run on
+hardware yet: the runtime gates for the window on Zink/NVK, input, audio and
+playback are the follow-up tickets, and `boot.log` is what those bring-ups read
+first.
 
 ### Deploying
 
-Copy `build/switch2-release/wiliwili.nro` to the SD card as
-`/switch/wiliwili.nro` and start it from kaiHEN's homebrew menu. Configuration
-is read from `/config/wiliwili/` as on Switch 1. Keep `wiliwili.elf` next to the
-release artifacts: the NRO is created from it by `elf2nro`, and crash addresses
-only resolve against that exact ELF.
+Copy `build/switch2-release/wiliwili-NS2.nro` to the SD card as
+`/switch/wiliwili-NS2.nro` and start it from kaiHEN's homebrew menu. Settings,
+themes, custom fonts and `boot.log` live in `/config/wiliwili-ns2/`, next to
+Switch 1's `/config/wiliwili/` and never mixed with it. If the app does not
+start, `/config/wiliwili-ns2/boot.log` records every init stage, and a boot that
+fails before the window exists says so on a text console. Keep
+`wiliwili-NS2.elf` next to the release artifacts: the NRO is created from it by
+`elf2nro`, and crash addresses only resolve against that exact ELF.
 
 ## Tests
 
-`ctest --preset desktop-release` runs `tests/config_test.cpp` (host only, built
-when `WILIWILI_BUILD_TESTS=ON`). It checks that `UPSTREAM.json` still records the
-revisions and digests this port was built against, that no pin floats (`latest`,
-`:latest`, `head`), that each of the six `dragonflylee/wiliwili` `dev` commits is
-either integrated or explicitly skipped, that `scripts/switch2/Dockerfile`
-installs exactly the digests and sha256 values `UPSTREAM.json` records, and that
-the presets keep the Switch 2 configuration (libounce toolchain, no deko3d, no
-NSP forwarder, safe release flags).
+`ctest --preset desktop-release` runs three host checks (built when
+`WILIWILI_BUILD_TESTS=ON`):
+
+- `config_pins` (`tests/config_test.cpp`) checks that `UPSTREAM.json` still
+  records the revisions and digests this port was built against, that no pin
+  floats (`latest`, `:latest`, `head`), that each of the six
+  `dragonflylee/wiliwili` `dev` commits is either integrated or explicitly
+  skipped, that `scripts/switch2/Dockerfile` installs exactly the digests and
+  sha256 values `UPSTREAM.json` records, and that the presets keep the Switch 2
+  configuration (libounce toolchain, no deko3d, no NSP forwarder, no libromfs,
+  safe release flags, `wiliwili-NS2.nro`).
+- `boot_diagnostics` (`tests/boot_diagnostics_test.cpp`) checks the contract the
+  device depends on: the Switch 2 config directory is `/config/wiliwili-ns2` and
+  never `/config/wiliwili`, telemetry is off there, a driver string cannot break
+  the one-line-per-note format of `boot.log`, the GPU report formatting is
+  stable, and `main()` plus the settings loader never construct `MPVCore`.
+- `switch2_artifact_audit` runs `scripts/switch2/audit-nro.sh` against
+  `build/switch2-release`. It skips itself when the cross toolchain or the
+  artifacts are absent, so a desktop-only checkout stays green.
 
 ## Switch 2 SDK capability review
 

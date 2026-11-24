@@ -113,6 +113,26 @@ endif ()
 # add borealis
 add_subdirectory(borealis/library)
 
+if (PLATFORM_SWITCH2)
+    # Borealis' SDL video backend asks for a desktop OpenGL 4.3 core context on
+    # any __SWITCH__ build, which is not what Switch 2 gets from OunceVK. The
+    # Switch 2 backend lives in this repository so library/borealis stays at its
+    # pinned commit: turn the submodule's file into a header (it is then not
+    # compiled) and build ours instead.
+    set(BOREALIS_SDL_VIDEO ${BOREALIS_LIBRARY}/lib/platforms/sdl/sdl_video.cpp)
+    set_source_files_properties(${BOREALIS_SDL_VIDEO}
+            DIRECTORY ${BOREALIS_LIBRARY}
+            PROPERTIES HEADER_FILE_ONLY TRUE)
+    set(WILIWILI_SWITCH2_SDL_VIDEO ${PROJECT_SOURCE_DIR}/platform/switch2/sdl_video.cpp)
+    target_sources(borealis PRIVATE ${WILIWILI_SWITCH2_SDL_VIDEO})
+    set_source_files_properties(${WILIWILI_SWITCH2_SDL_VIDEO} PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+    # The backend reports the driver capabilities through the boot log, and it
+    # needs <SDL2/SDL.h>: platform/switch2/compat carries that one include.
+    target_include_directories(borealis PRIVATE
+            ${PROJECT_SOURCE_DIR}/wiliwili/include
+            ${PROJECT_SOURCE_DIR}/platform/switch2/compat)
+endif ()
+
 # add libpdr (不使用 pdr 项目内的 cmake 配置，因为其内的 mongoose 不支持 psv/switch)
 file(GLOB_RECURSE PDR_SRC ${CMAKE_CURRENT_SOURCE_DIR}/libpdr/src/*.cpp)
 add_library(pdr ${PDR_SRC})
