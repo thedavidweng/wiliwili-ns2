@@ -127,12 +127,16 @@ The single installable Switch 2 binary produced for release, distinct from the u
 _Avoid_: NRO (unqualified), NSP forwarder, package
 
 **libounce**:
-The Switch 2 platform API layer, libnx-compatible, exposing VideoDecoder, swkbd and shared fonts to this port.
+The Switch 2 platform API layer, libnx-compatible, exposing PadPointer/Nmouse, VideoDecoder, swkbd and shared fonts to this port.
 _Avoid_: libnx, Switch 1 SDK, devkitPro portlibs
 
+**PadPointer / Nmouse**:
+libounce's native Switch 2 optical Joy-Con 2 mouse and pointer interface (`padPointer*` over `hid*Nmouse`), integrated into the Borealis mouse abstraction rather than treated as touch input.
+_Avoid_: simulated touch, emulated cursor, generic SDL mouse
+
 **OunceVK**:
-The Switch 2 EGL/GLES/Vulkan graphics runtime used by the port.
-_Avoid_: deko3d, Switch 1 GPU libraries, Vulkan renderer
+The Switch 2 Mesa NVK (Vulkan 1.4) and Zink (EGL/OpenGL/GLES) graphics runtime used by the port.
+_Avoid_: deko3d, Switch 1 GPU libraries
 
 **Shared font fallback**:
 Reading CJK glyphs from system font services at runtime instead of redistributing console font binaries.
@@ -145,25 +149,25 @@ A mandatory real-console acceptance decision whose evidence must be supplied by 
 _Avoid_: CI check, smoke test, synthetic screenshot
 
 **G1**:
-The UI and platform device gate covering boot, interface rendering, controller and touch input, Chinese input, fonts and lifecycle; it blocks Phase 2.
+The UI and platform device gate covering boot, interface rendering, controller, touch and Joy-Con 2 mouse input, Chinese input, fonts, dynamic display modes and lifecycle; it blocks Phase 2.
 _Avoid_: boot test, UI smoke test
 
 **G2**:
-The software-playback device gate requiring continuous authorized 1080p DASH playback with audio and danmaku plus 1080p60 benchmarks; it blocks hardware R&D and release.
+The software-playback and performance-baseline device gate requiring continuous authorized 1080p DASH playback with audio, danmaku, mouse-driven player/timeline control and p50/p95/p99 frame-time benchmarks; it blocks hardware R&D, native Vulkan research and release.
 _Avoid_: playback test, decode benchmark, 720p diagnostic
 
 **G3**:
-The human decision gate that permits merging the hardware path only on measured benefit and acceptable maintenance cost.
+The human decision gate that permits merging the libounce VideoDecoder hardware path (bounded-copy or GPU-imported) on measured benefit and acceptable maintenance cost.
 _Avoid_: hardware feature gate, performance review
 
 **Software baseline**:
-The pinned FFmpeg 7.1 and mpv 0.36.0 software-decoding configuration that remains the known-good release fallback after G2.
-_Avoid_: fallback mode, legacy path
+The pinned FFmpeg 7.1 and mpv 0.36.0 software-decoding configuration that remains the known-good compatibility and recovery path after G2.
+_Avoid_: legacy path
 
 **Hardware track**:
-The gated research branch investigating libounce VideoDecoder, kept separate so it cannot destabilize the software baseline.
-_Avoid_: hardware backend, second app
+The prioritized post-G2 branch investigating libounce VideoDecoder and frame transport, kept separate until G3 approval so it cannot destabilize the software baseline.
+_Avoid_: second app
 
 **Zero-copy interop**:
-Decoder frames passed to EGL/GLES without CPU readback; a capability to be proven rather than assumed.
+Passing decoded VideoDecoder surfaces to EGL/GLES or Vulkan without CPU readback; an optimization goal to be proven rather than assumed or treated as the sole acceptable hardware-decode path.
 _Avoid_: native frame interop, hardware decoding
