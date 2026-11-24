@@ -133,6 +133,26 @@ if (PLATFORM_SWITCH2)
             ${PROJECT_SOURCE_DIR}/platform/switch2/compat)
 endif ()
 
+if (PLATFORM_SWITCH2)
+    # Same override pattern for input, text and fonts (issue #4): the submodule's
+    # Switch files know nothing about the Joy-Con 2 pointer, the system keyboard
+    # buffer is a fixed 0x100 bytes and only one font gets a CJK fallback chain.
+    # Turning the submodule copies into headers keeps library/borealis pinned.
+    foreach (BOREALIS_SWITCH_FILE switch_input.cpp switch_ime.cpp switch_font.cpp)
+        set(BOREALIS_SWITCH_SRC ${BOREALIS_LIBRARY}/lib/platforms/switch/${BOREALIS_SWITCH_FILE})
+        set_source_files_properties(${BOREALIS_SWITCH_SRC}
+                DIRECTORY ${BOREALIS_LIBRARY}
+                PROPERTIES HEADER_FILE_ONLY TRUE)
+        set(WILIWILI_SWITCH2_SRC ${PROJECT_SOURCE_DIR}/platform/switch2/borealis/${BOREALIS_SWITCH_FILE})
+        target_sources(borealis PRIVATE ${WILIWILI_SWITCH2_SRC})
+        set_source_files_properties(${WILIWILI_SWITCH2_SRC} PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+    endforeach ()
+    target_sources(borealis PRIVATE ${PROJECT_SOURCE_DIR}/platform/switch2/switch2_pointer.cpp)
+    # switch2_pointer.hpp / switch2_cjk.hpp are pure and also compiled by the
+    # host tests; the device headers include <switch.h>.
+    target_include_directories(borealis PRIVATE ${PROJECT_SOURCE_DIR}/platform/switch2)
+endif ()
+
 # add libpdr (不使用 pdr 项目内的 cmake 配置，因为其内的 mongoose 不支持 psv/switch)
 file(GLOB_RECURSE PDR_SRC ${CMAKE_CURRENT_SOURCE_DIR}/libpdr/src/*.cpp)
 add_library(pdr ${PDR_SRC})
