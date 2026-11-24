@@ -18,6 +18,7 @@
 #include "fragment/setting_network.hpp"
 #include "fragment/test_rumble.hpp"
 #include "utils/config_helper.hpp"
+#include "utils/platform_api.h"
 #include "utils/vibration_helper.hpp"
 #include "utils/dialog_helper.hpp"
 #include "utils/activity_helper.hpp"
@@ -676,7 +677,10 @@ void SettingActivity::onContentAvailable() {
             ProgramConfig::instance().setSettingItem(SettingItem::HTTP_PROXY, httpProxy);
             ProgramConfig::instance().setProxy(httpProxy);
         },
-        "wiliwili/setting/app/network/proxy_hint"_i18n, "wiliwili/setting/app/network/proxy_hint"_i18n, 64);
+        "wiliwili/setting/app/network/proxy_hint"_i18n, "wiliwili/setting/app/network/proxy_hint"_i18n, 64,
+        // A proxy URL that embeds credentials is a secret: the keyboard masks it
+        // instead of showing the user name and password on a shared screen.
+        wiliwili_proxy_is_sensitive(httpProxy.c_str()) ? KEYBOARD_SENSITIVE_INPUT : 0);
 
 /// Hardware decode
 #if defined(PS4) || defined(__PSV__) && defined(BOREALIS_USE_OPENGL)

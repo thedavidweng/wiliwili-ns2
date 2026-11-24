@@ -10,26 +10,15 @@
 #include <iostream>
 #include <string>
 
-#include "switch2_display.hpp"
 #include "lifecycle_probe.hpp"
+#include "switch2_display.hpp"
+#include "test_check.hpp"
 #include "utils/boot_diagnostics.hpp"
 
 namespace {
 
-int failures = 0;
-
-void check(bool ok, const std::string& what, int line) {
-    if (ok) return;
-    std::cerr << "FAIL (line " << line << "): " << what << '\n';
-    ++failures;
-}
-
-#define CHECK(cond) check((cond), #cond, __LINE__)
-#define CHECK_EQ(actual, expected)                                                          \
-    check((actual) == (expected),                                                           \
-          std::string(#actual) + " == " + std::string(#expected) + " (got \"" + (actual) +  \
-              "\", want \"" + (expected) + "\")",                                           \
-          __LINE__)
+using test_check::check;
+using test_check::failures;
 
 void check_framebuffer_fit() {
     // Handheld is a native 1080p panel: the UI renders at the panel size, not at
@@ -116,21 +105,21 @@ void check_lifecycle_probe() {
     // A healthy console: audio outputs are open, the socket is connected with an
     // address, and nifm reports a DNS server.
     wili::ProbeResult healthy;
-    healthy.ran        = true;
-    healthy.audioInitOk = true;
-    healthy.audioOk    = true;
+    healthy.ran          = true;
+    healthy.audioInitOk  = true;
+    healthy.audioOk      = true;
     healthy.audioOutputs = 2;
-    healthy.connected  = true;
-    healthy.addressOk  = true;
-    healthy.dnsOk      = true;
+    healthy.connected    = true;
+    healthy.addressOk    = true;
+    healthy.dnsOk        = true;
     CHECK(healthy.healthy());
     CHECK_EQ(healthy.summary(), "audio 2 outputs, socket connected, dns configured");
 
     // Each failing half is reported on its own: audio can come back without a
     // network and vice versa, and the log has to say which one is broken.
     wili::ProbeResult noAudio = healthy;
-    noAudio.audioInitOk      = false;
-    noAudio.audioOk          = false;
+    noAudio.audioInitOk       = false;
+    noAudio.audioOk           = false;
     CHECK(!noAudio.healthy());
     CHECK_EQ(noAudio.summary(), "audio init failed, socket connected, dns configured");
 
@@ -156,6 +145,63 @@ void check_lifecycle_probe() {
     CHECK(!wili::ProbeResult{}.healthy());
 }
 
+// A pre-playback probe asks about the audio route only while playback does not
+// own it: opening aud:u under a playing mpv closes the handle it is using.
+void check_pre_playback_probe() {
+    CHECK(wili::probeAudioRoute(false));  // nothing plays yet: probe the route
+    CHECK(!wili::probeAudioRoute(true));  // mpv holds it: skip
+
+    // The skipped half says so instead of claiming outputs it never looked at.
+    wili::ProbeResult skipped;
+    skipped.ran          = true;
+    skipped.audioSkipped = true;
+    skipped.connected    = true;
+    skipped.addressOk    = true;
+    skipped.dnsOk        = true;
+    CHECK_EQ(skipped.summary(), "audio owned by playback, socket connected, dns configured");
+    CHECK(skipped.healthy());  // the player's own route is not a fault
+
+    // The socket half is still the reason a stream can fail.
+    wili::ProbeResult offline = skipped;
+    offline.connected         = false;
+    offline.addressOk         = false;
+    offline.dnsOk             = false;
+    CHECK(!offline.healthy());
+    CHECK_EQ(offline.summary(), "audio owned by playback, socket not connected, dns unresolved");
+}
+
+// A Wi-Fi drop and reconnect never suspends the console, so the platform polls
+// nifm instead of waiting for an applet hook. A reconnect or a new address is
+// what makes the cached DNS answers and sockets stale.
+void check_network_watch() {
+    wili::NetworkWatch watch;
+    const int64_t start = 10 * 1000 * 1000;
+
+    // The first ask is always due, then one query per interval.
+    CHECK(watch.due(start));
+    watch.markPolled(start);
+    CHECK(!watch.due(start + 1));
+    CHECK(!watch.due(start + wili::NetworkWatch::POLL_INTERVAL_US - 1));
+    CHECK(watch.due(start + wili::NetworkWatch::POLL_INTERVAL_US));
+    CHECK_EQ((int)wili::NetworkWatch::POLL_INTERVAL_US, 2000000);
+
+    // The first sample is the baseline: nothing is stale yet.
+    CHECK(!watch.observe({true, 0xA000001}));
+    CHECK(!watch.observe({true, 0xA000001}));  // unchanged
+
+    // A transient drop is not a reset: the next request simply fails, and the
+    // reconnect is what invalidates the old answers.
+    CHECK(!watch.observe({false, 0}));
+    CHECK(watch.observe({true, 0xA000001}));
+
+    // A new address on the same Wi-Fi also invalidates them.
+    CHECK(watch.observe({true, 0xA000002}));
+
+    // Staying disconnected does not schedule anything.
+    CHECK(!watch.observe({false, 0}));
+    CHECK(!watch.observe({false, 0}));
+}
+
 void check_teardown_order() {
     // The platform destructor runs the steps in this order. The input manager
     // has to go before the video context (its destructor deletes a cursor image
@@ -166,11 +212,20 @@ void check_teardown_order() {
     int index = 0;
     for (wili::TeardownStep step : wili::TEARDOWN_ORDER) {
         switch (step) {
-            case wili::TeardownStep::Unhook: unhook = index; break;
-            case wili::TeardownStep::Input: input = index; break;
-            case wili::TeardownStep::Video: video = index; break;
-            case wili::TeardownStep::Display: display = index; break;
-            default: break;
+            case wili::TeardownStep::Unhook:
+                unhook = index;
+                break;
+            case wili::TeardownStep::Input:
+                input = index;
+                break;
+            case wili::TeardownStep::Video:
+                video = index;
+                break;
+            case wili::TeardownStep::Display:
+                display = index;
+                break;
+            default:
+                break;
         }
         ++index;
     }
@@ -256,8 +311,7 @@ void check_display_diagnostics() {
              "render 1920x1080, refresh 60 Hz, output 1920x1080 handheld");
 
     // A failed query says so instead of claiming a resolution.
-    CHECK_EQ(wili::describeDisplay({0, 0, false}, {}, {0, false}),
-             "render unknown, refresh unknown, output unknown");
+    CHECK_EQ(wili::describeDisplay({0, 0, false}, {}, {0, false}), "render unknown, refresh unknown, output unknown");
 }
 
 }  // namespace
@@ -268,13 +322,10 @@ int main() {
     check_frame_pacing();
     check_display_diagnostics();
     check_lifecycle_probe();
+    check_pre_playback_probe();
+    check_network_watch();
     check_teardown_order();
     check_tls_default();
 
-    if (failures) {
-        std::cerr << failures << " check(s) failed\n";
-        return 1;
-    }
-    std::cout << "switch2 lifecycle checks passed\n";
-    return 0;
+    return test_check::report("switch2 lifecycle checks passed");
 }

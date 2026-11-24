@@ -8,37 +8,40 @@
 
 #include "switch2_pointer.hpp"
 
-namespace wili::switch2
-{
+namespace wili::switch2 {
 
-// One frame of raw pointer data. Both sources are reported separately so the
+// One frame of raw pointer data. The two sources are reported separately so the
 // input manager can keep a single logical cursor instead of letting one of them
 // teleport it.
-struct RawPointerSample
-{
+struct RawPointerSample {
     // Joy-Con 2 pointer (PadPointer), absolute position in the pointer area.
-    bool has_pointer  = false;
-    PointerSide side  = PointerSide::None;
-    int x             = 0;
-    int y             = 0;
-    int delta_x       = 0;
-    int delta_y       = 0;
-    int wheel_y       = 0;
-    bool left         = false;
-    bool middle       = false;
-    bool right        = false;
-    uint64_t claim_mask = 0; // L|ZL or R|ZR while the pointer reports a click
+    struct Pad {
+        bool present        = false;
+        PointerSide side    = PointerSide::None;
+        uint64_t buttons    = 0;  // the pad's buttons this frame, for the claim latch
+        uint64_t claim_mask = 0;  // L|ZL or R|ZR while the pointer reports a click
+        int x               = 0;
+        int y               = 0;
+        int delta_x         = 0;
+        int delta_y         = 0;
+        int wheel_y         = 0;
+        bool left           = false;
+        bool middle         = false;
+        bool right          = false;
+    } pad;
 
     // Standard USB/Bluetooth mouse: relative movement only, its absolute
     // coordinates have no relation to the framebuffer.
-    bool has_mouse  = false;
-    int mouse_delta_x = 0;
-    int mouse_delta_y = 0;
-    int mouse_wheel_x = 0;
-    int mouse_wheel_y = 0;
-    bool mouse_left   = false;
-    bool mouse_middle = false;
-    bool mouse_right  = false;
+    struct Mouse {
+        bool present = false;
+        int delta_x  = 0;
+        int delta_y  = 0;
+        int wheel_x  = 0;
+        int wheel_y  = 0;
+        bool left    = false;
+        bool middle  = false;
+        bool right   = false;
+    } mouse;
 };
 
 // Starts the Joy-Con pointers. The first call initializes Nmouse for the whole
@@ -60,4 +63,4 @@ RawPointerSample pointerSample(PadState* pad);
 // system keyboard, so a click can never stay held across an applet switch.
 void releasePointerClaims();
 
-} // namespace wili::switch2
+}  // namespace wili::switch2

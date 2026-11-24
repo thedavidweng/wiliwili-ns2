@@ -1,12 +1,31 @@
-// See utils/platform_api.h: the calls the Switch 2 platform half makes into the
-// app. Only built for the console, where the platform backend is the caller.
+// See utils/platform_api.h: the calls that cross between the two halves. The
+// proxy check is pure and compiled everywhere (the settings screen that opens
+// the keyboard for it is not console specific); the network reset only exists on
+// the console, which is the only caller.
 
 #include "utils/platform_api.h"
 
+#include <cstring>
+
 #if defined(__SWITCH2__)
 #include "api/bilibili/util/http.hpp"
+#endif
 
-void wiliwili_network_reset(void) {
-    bilibili::HTTP::resetDnsCache();
+/* scheme://user:pass@host. The credentials sit between the scheme separator and
+ * the first '@' in a URL that is not a bare host: that is the only part of the
+ * string a keyboard should mask. */
+int wiliwili_proxy_is_sensitive(const char* url) {
+    if (url == nullptr) return 0;
+
+    const char* scheme    = std::strstr(url, "://");
+    const char* authority = scheme != nullptr ? scheme + 3 : url;
+    const char* at        = std::strchr(authority, '@');
+    if (at == nullptr) return 0;
+
+    const char* colon = std::strchr(authority, ':');
+    return colon != nullptr && colon < at;
 }
+
+#if defined(__SWITCH2__)
+void wiliwili_network_reset(void) { bilibili::HTTP::resetDnsCache(); }
 #endif

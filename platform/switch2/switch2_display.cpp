@@ -43,8 +43,8 @@ constexpr int MAX_FRAMEBUFFER_HEIGHT = 1080;
 constexpr int POLL_INTERVAL_FRAMES = 60;
 
 struct DisplayState {
-    SDL_Window* window   = nullptr;
-    bool initialized     = false;
+    SDL_Window* window = nullptr;
+    bool initialized   = false;
 
     // appletGetDefaultDisplayResolutionChangeEvent, closed in displayShutdown().
     Event changeEvent{};
@@ -60,10 +60,10 @@ struct DisplayState {
     wili::OutputMode output{};
     wili::Framebuffer framebuffer{};
     wili::Refresh refresh{};
-    int appliedWidth     = 0;
-    int appliedHeight    = 0;
-    int framesSincePoll  = 0;
-    double scaleFactor   = 1.0;
+    int appliedWidth    = 0;
+    int appliedHeight   = 0;
+    int framesSincePoll = 0;
+    double scaleFactor  = 1.0;
 };
 
 DisplayState state;
@@ -111,27 +111,30 @@ void openVi2() {
 
     state.capability = wili::decodeRefreshCapability(caps.refresh_rates);
     note(fmt::format("vi2 modes: {}{}{}", state.capability.supports60 ? "60 Hz " : "",
-                     state.capability.supports120 ? "120 Hz " : "",
-                     state.capability.vrr ? "VRR" : ""));
+                     state.capability.supports120 ? "120 Hz " : "", state.capability.vrr ? "VRR" : ""));
 
-    // Ask once: a request that VI2's display manager weighs at its next mode
-    // selection, not a mode change, and the refresh query reports what it
-    // actually chose. Asking does not mean presenting 120 frames a second of an
-    // unchanged screen: the platform paces an idle, non-playing UI down.
+    // This declares the capability to VI2 once, and nothing more: the display
+    // manager weighs it at its next mode selection, and vi2QueryDisplayRefreshRate
+    // (queryRefresh below) is what this port reads back for the boot.log
+    // diagnostics and the idle pacing. Presenting an interface at 120 Hz through
+    // OunceVK/Zink is not verified here and stays a Gate G1 item on a physical
+    // console.
     if (state.capability.supports120) {
-        const Result rc   = vi2SetDisplay120HzCapability(&state.vi2Display, true);
+        const Result rc    = vi2SetDisplay120HzCapability(&state.vi2Display, true);
         state.requested120 = R_SUCCEEDED(rc);
-        note(fmt::format("vi2 120 Hz request {}", state.requested120 ? "accepted" : "failed"));
+        note(fmt::format("vi2 120 Hz capability {}", state.requested120 ? "declared" : "rejected"));
     }
 }
 
-// The nominal rate can change after the 120 Hz request was weighed, so it is
-// re-read on every display poll and recorded when it moves.
+// The nominal rate can change after the capability was declared, so it is re-read
+// on every display poll and recorded when it moves. It is a reported fact for the
+// diagnostics and the idle pacing, not proof that frames reach the panel at that
+// rate (Gate G1).
 void queryRefresh() {
     if (!state.vi2DisplayOpen) return;
 
-    u32 hz         = 0;
-    bool vrr       = false;
+    u32 hz                       = 0;
+    bool vrr                     = false;
     const wili::Refresh previous = state.refresh;
     if (R_SUCCEEDED(vi2QueryDisplayRefreshRate(&state.vi2Display, &hz, &vrr)) && (hz == 60 || hz == 120)) {
         state.refresh = {int(hz), vrr};
@@ -183,9 +186,8 @@ bool refreshDisplay(bool force) {
     bool changed = false;
 
     wili::OutputMode output;
-    if (queryOutput(output) &&
-        (output.width != state.output.width || output.height != state.output.height ||
-         output.docked != state.output.docked)) {
+    if (queryOutput(output) && (output.width != state.output.width || output.height != state.output.height ||
+                                output.docked != state.output.docked)) {
         state.output      = output;
         state.framebuffer = wili::fitFramebuffer(output, MAX_FRAMEBUFFER_WIDTH, MAX_FRAMEBUFFER_HEIGHT);
         changed           = true;

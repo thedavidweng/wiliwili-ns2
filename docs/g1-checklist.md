@@ -60,7 +60,7 @@ One line per stage. The ones G1 reads:
 | `[boot]`, `[socket]`, `[romfs]`, `[pl]`, `[setsys]`, `[set]`, `[psm]`, `[nifm]`, `[lbl]` | `ok` | the stage that says `failed: 0x...` is the cause; a boot that cannot start prints the reason on a text console |
 | `[gpu] gpu api: OpenGL ES (Zink)` | `GL_RENDERER` names Zink, `[gpu] vkDeviceName` names NVK on the Switch 2 GPU | still on a screen means Zink is not the driver; note the strings verbatim |
 | `[display] render WxH, refresh N Hz, output WxH handheld\|docked` | handheld shows `output 1920x1080 handheld`; the render size is at most 1920x1080 | a `render` of 0 or a missing line means the display query failed; note it, the UI still runs |
-| `[display] vi2 ...` | either the mode list and the 120 Hz request result, or `vi2 unavailable (0x...)` | both are non-fatal. Note which one and whether the UI still updates |
+| `[display] vi2 ...` | either the mode list and the 120 Hz capability result, or `vi2 unavailable (0x...)` | both are non-fatal. Note which one and whether the UI still updates |
 | `[probe] boot: audio N outputs, socket connected, dns configured` | exactly that | `audio init failed` / `socket not connected` / `dns unresolved` name the failing half |
 | `[lifecycle] resumed` | one per sleep/wake | a missing line means the resume hook did not fire |
 | `[probe] resume: ...` | follows a resume when the probe is due (it is rate limited to 30 s) | a stale `socket not connected` explains a first request that fails right after a wake |
@@ -133,10 +133,17 @@ appears when nothing is moving, note it — the claim gate is `#4`'s.
 Dock and undock at least three times, with the UI on a scrolling feed and once
 while a video is open. Each transition has to update the picture without a
 stretched or cropped frame, and `boot.log` has to show a new `[display]` line
-whose `output` matches the new mode. Note whether the refresh rate changes when
-docking (`refresh 60 Hz` vs `refresh 120 Hz`) and whether the 120 Hz request was
-accepted — this is the item that decides whether 120 Hz UI is real on this
-runtime.
+whose `output` matches the new mode.
+
+Note whether the reported refresh rate changes when docking (`refresh 60 Hz` vs
+`refresh 120 Hz`) and whether `vi2SetDisplay120HzCapability` was accepted. Both
+are reported facts only: the port declares the capability to VI2 and reads
+`vi2QueryDisplayRefreshRate` back for the diagnostics and the idle pacing. It
+does not claim to present 120 frames a second through OunceVK/Zink. That claim
+needs a measurement this checklist has to supply: a frame-time capture on the
+console while the UI animates, compared against the reported rate. Until then
+the honest statement is "the console reports 120 Hz and the capability was
+accepted", never "the UI runs at 120 Hz".
 
 Sleep and wake at least three times, once from the home feed, once with a video
 playing, once with the search keyboard open. After each wake: the UI redraws, the
@@ -177,5 +184,5 @@ no missing audio).
 Comment on `#6` with the provenance table, the item table and the `boot.log`
 from each section that failed. Include the exact strings the console produced;
 paraphrased results cannot be accepted for a device gate. If a `vi2` call, the
-120 Hz request or `tls_verify=1` fails, say so plainly — the port advertises only
+120 Hz capability or `tls_verify=1` fails, say so plainly — the port advertises only
 what the console confirmed.

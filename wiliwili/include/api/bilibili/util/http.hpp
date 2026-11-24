@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
 
+#include <atomic>
 #include <mutex>
 #include <vector>
 
@@ -63,12 +64,26 @@ public:
     // share. Handles that already hold the old one keep it alive (curl does not
     // allow freeing a share a handle is using), so it is released with this
     // object instead of immediately.
+    //
+    // The connection pool is a second, separate problem: a pooled socket was
+    // opened on the previous network too. A reset therefore also opens a
+    // fresh-connection window, and createSession() asks curl for a new connection
+    // for the first sessions in it instead of reusing one.
     void resetDnsCache() {
         std::lock_guard<std::mutex> lock(guard);
         CURLSH* fresh = createShare();
         if (fresh == nullptr) return;
         retired.push_back(share);
         share = fresh;
+        freshSessions.store(FRESH_SESSIONS_AFTER_RESET);
+    }
+
+    // True while a session created now must not reuse a pooled connection.
+    bool takeFreshSession() {
+        int remaining = freshSessions.load();
+        while (remaining > 0 && !freshSessions.compare_exchange_weak(remaining, remaining - 1)) {
+        }
+        return remaining > 0;
     }
 
 private:
@@ -85,9 +100,12 @@ private:
         return new_share;
     }
 
+    static constexpr int FRESH_SESSIONS_AFTER_RESET = 4;
+
     CURLSH* share;
     std::vector<CURLSH*> retired;
     std::mutex guard;
+    std::atomic<int> freshSessions{0};
     std::recursive_mutex lock_array[CURL_LOCK_DATA_LAST];
 };
 
@@ -121,6 +139,12 @@ public:
         CURL* curl = session->GetCurlHolder()->handle;
         curl_easy_setopt(curl, CURLOPT_SHARE, HTTP::CURL_SHARE.getShare());
         curl_easy_setopt(curl, CURLOPT_DNS_CACHE_TIMEOUT, HTTP::DNS_CACHE_TIMEOUT);
+        // Right after a network reset the pooled sockets belong to the network
+        // that just went away; the first sessions open a new one.
+        if (HTTP::CURL_SHARE.takeFreshSession()) {
+            curl_easy_setopt(curl, CURLOPT_FRESH_CONNECT, 1L);
+            curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L);
+        }
         session->SetTimeout(cpr::Timeout{bilibili::HTTP::TIMEOUT});
         session->SetConnectTimeout(cpr::ConnectTimeout{bilibili::HTTP::CONNECTION_TIMEOUT});
         session->SetHeader(bilibili::HTTP::HEADERS);

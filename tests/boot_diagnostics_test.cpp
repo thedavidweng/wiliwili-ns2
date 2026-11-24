@@ -5,40 +5,19 @@
 // keeps its settings in /config/wiliwili-ns2, sends no telemetry, and a driver
 // string can never break the one-line-per-note format of boot.log.
 
-#include <fstream>
-#include <iostream>
-#include <iterator>
 #include <string>
 #include <vector>
 
+#include "test_check.hpp"
 #include "utils/boot_diagnostics.hpp"
+#include "utils/number_helper.hpp"
 
 namespace {
 
-int failures = 0;
+using test_check::check;
+using test_check::failures;
 
-void check(bool ok, const std::string& what, int line) {
-    if (ok) return;
-    std::cerr << "FAIL (line " << line << "): " << what << '\n';
-    ++failures;
-}
-
-#define CHECK(cond) check((cond), #cond, __LINE__)
-#define CHECK_EQ(actual, expected)                                                       \
-    check((actual) == (expected),                                                        \
-          std::string(#actual) + " == " + std::string(#expected) + " (got \"" + (actual) + \
-              "\", want \"" + (expected) + "\")",                                        \
-          __LINE__)
-
-std::string read_source(const std::string& relative) {
-    std::ifstream file(std::string(WILIWILI_SOURCE_DIR) + "/" + relative);
-    if (!file) {
-        std::cerr << "FAIL: cannot read " << relative << '\n';
-        ++failures;
-        return {};
-    }
-    return std::string{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-}
+std::string read_source(const std::string& relative) { return test_check::readSource(relative); }
 
 void check_config_namespaces() {
     // Switch 2 must never share a directory with Switch 1: a Switch 1 install
@@ -74,7 +53,9 @@ void check_sanitizer() {
     // One log line stays one log line.
     CHECK_EQ(wili::sanitizeLogValue("zink (Vulkan 1.4.318)\nZink"), "zink (Vulkan 1.4.318) Zink");
     CHECK_EQ(wili::sanitizeLogValue("  \t Mesa \r\n\n"), "Mesa");
-    CHECK_EQ(wili::sanitizeLogValue("a\x01\x02" "b"), "a b");
+    CHECK_EQ(wili::sanitizeLogValue("a\x01\x02"
+                                    "b"),
+             "a b");
     CHECK_EQ(wili::sanitizeLogValue("a  b"), "a b");
     CHECK(wili::sanitizeLogValue("").empty());
     CHECK(wili::sanitizeLogValue("\x7f\x01", 8).empty());
@@ -130,7 +111,7 @@ void check_gpu_formatter() {
 bool lines_within(const std::string& text, size_t maxLength, std::string& offender) {
     size_t start = 0;
     while (start < text.size()) {
-        const size_t end = text.find('\n', start);
+        const size_t end       = text.find('\n', start);
         const std::string line = text.substr(start, end == std::string::npos ? std::string::npos : end - start);
         if (line.size() > maxLength) {
             offender = line;
@@ -151,13 +132,12 @@ void check_extension_list() {
              "GL_EXTENSIONS (3): GL_EXT_a GL_EXT_b GL_EXT_c\n");
 
     // Too long for one line: wrapped, and every line says what it is.
-    CHECK_EQ(wili::formatExtensionList("GL_EXTENSIONS",
-                                       {"GL_EXT_aaaaaaaaaa", "GL_EXT_bbbbbbbbbb", "GL_EXT_cccccccccc",
-                                        "GL_EXT_dddddddddd"},
-                                       40),
-             "GL_EXTENSIONS (4): GL_EXT_aaaaaaaaaa\n"
-             ".. GL_EXT_bbbbbbbbbb GL_EXT_cccccccccc\n"
-             ".. GL_EXT_dddddddddd\n");
+    CHECK_EQ(
+        wili::formatExtensionList(
+            "GL_EXTENSIONS", {"GL_EXT_aaaaaaaaaa", "GL_EXT_bbbbbbbbbb", "GL_EXT_cccccccccc", "GL_EXT_dddddddddd"}, 40),
+        "GL_EXTENSIONS (4): GL_EXT_aaaaaaaaaa\n"
+        ".. GL_EXT_bbbbbbbbbb GL_EXT_cccccccccc\n"
+        ".. GL_EXT_dddddddddd\n");
 
     // An entry with no room left is marked as truncated instead of overflowing:
     // 40 bytes of line, 19 of header, the first 18 bytes of the name and "...".
@@ -209,6 +189,29 @@ void check_boot_stays_light() {
     CHECK(config.find("wili::configDirForPlatform(wili::PLATFORM_ID)") != std::string::npos);
 }
 
+// The API hands out numeric ids as strings. A malformed one is a normal answer,
+// so it has to fail a check instead of throwing on the UI thread.
+void check_api_ids() {
+    uint64_t id = 7;
+    CHECK(wiliwili::parseUid("2511565362", id));
+    CHECK_EQ(id, (uint64_t)2511565362);
+
+    // Anything that is not exactly one decimal id leaves the value alone.
+    id = 7;
+    CHECK(!wiliwili::parseUid("", id));
+    CHECK(!wiliwili::parseUid("abc", id));
+    CHECK(!wiliwili::parseUid("12a", id));
+    CHECK(!wiliwili::parseUid("-5", id));
+    CHECK(!wiliwili::parseUid(" 42", id));
+    CHECK(!wiliwili::parseUid("99999999999999999999999999", id));
+    CHECK_EQ(id, (uint64_t)7);
+
+    // ... and the dynamic feed uses it instead of the throwing conversion.
+    const std::string dynamic = read_source("wiliwili/source/fragment/dynamic_tab.cpp");
+    CHECK(dynamic.find("std::stoull") == std::string::npos);
+    CHECK(dynamic.find("parseUid(") != std::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -219,11 +222,7 @@ int main() {
     check_extension_list();
     check_gpu_report_sources();
     check_boot_stays_light();
+    check_api_ids();
 
-    if (failures != 0) {
-        std::cerr << failures << " check(s) failed\n";
-        return 1;
-    }
-    std::cout << "all boot diagnostics checks passed\n";
-    return 0;
+    return test_check::report("all boot diagnostics checks passed");
 }

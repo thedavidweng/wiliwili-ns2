@@ -88,18 +88,28 @@ devkit: it points `NX_ROOT` at `$DEVKITPRO/libounce`, puts
 portlibs, forces `ANALYTICS` off with `-DNO_GA` so the port compiles without the
 Google Analytics endpoint and key, and adds the link map the audit reads.
 
-### What the Switch 2 sources replace
+### What the Switch 2 sources replace and add
 
-Two Switch 1 assumptions do not hold on the [ounce] devkit, and both live in
-this repository so `library/borealis` stays at its pinned commit:
+Borealis' Switch 1 backend assumes hardware this console does not have, and the
+input, text, display and lifecycle work the port needs has no upstream home. All
+of it lives in this repository so `library/borealis` stays at its pinned commit:
+`library/CMakeLists.txt` marks each replaced submodule file `HEADER_FILE_ONLY`
+and compiles the Switch 2 copy instead. `platform/switch2/switch2_pointer.cpp`,
+the header-only decisions and `lifecycle_probe.cpp` are additions rather than
+replacements.
 
 | File | Why |
 |---|---|
 | `platform/switch2/sdl_video.cpp` | Borealis' SDL backend asks for a desktop OpenGL 4.3 core context on any `__SWITCH__` build. Here the `#ifdef __SWITCH__` block is Switch 1 only, so Switch 2 gets the GLES2 context OunceVK provides, the window is created at the console's own handheld resolution, every failing SDL/GL call is reported, and the GL strings, the GLES extension list and the NVK Vulkan device with its instance and device extension lists are written to `boot.log`. `library/CMakeLists.txt` sets the submodule's file to `HEADER_FILE_ONLY` and compiles this one instead |
 | `platform/switch2/switch2_wrapper.c` | `userAppInit`: same services as the Switch 1 wrapper, each stage recorded in `boot.log`; a boot that cannot start now reports on a text console instead of going black |
 | `platform/switch2/borealis/switch_platform.cpp` | Borealis' Switch platform only handles focus and exit, gates `AppletHookType_OnOperationMode` behind `BOREALIS_USE_DEKO3D` (dead code on this build) and never pumps `SDL_PollEvent`, so the queue used to grow for the whole session and a dock or a resume was invisible to the UI. The replacement handles every applet hook, pumps SDL, follows the display on dock/undock, paces frames from the panel refresh and releases the platform in a fixed teardown order |
-| `platform/switch2/switch2_display.{hpp,cpp}` | The display decisions: what the console reports (`appletGetDefaultDisplayResolution`, `appletGetOperationMode`), what it can refresh at (`vi2QueryDisplayRefreshRate`, `vi2QueryDisplayModeCapability`, a `vi2SetDisplay120HzCapability` request), and how that becomes a framebuffer, a GL viewport and a Borealis logical size. All of it best effort: VI2 may answer busy while OunceVK owns the window |
-| `platform/switch2/lifecycle_probe.{hpp,cpp}` | The pre-playback probe: `audoutInitialize`/`audoutListAudioOuts` over libounce's `aud:u` route plus `nifm` connection, address and DNS state, one sanitized `boot.log` line, and the teardown order the platform destructor follows |
+| `platform/switch2/borealis/switch_input.cpp` | Borealis' Switch input manager knows nothing about the Joy-Con 2 optical mouse, maps touch through the pointer's framebuffer scale, applies the `L|ZL` / `R|ZR` claim to every pad in the frame and never draws a hover frame. The replacement drives `PadPointer` beside the standard mouse, keeps one logical cursor, latches the claim once per frame from the pointer pad only, frames the control under the cursor, and maps touch through the digitizer's own domain |
+| `platform/switch2/borealis/switch_ime.cpp` | The upstream system keyboard sizes its buffer at a fixed `0x100` bytes (which truncates UTF-8 CJK), treats "no spaces" as password masking and has no path at all when `swkbdCreate` fails. The replacement sizes the buffer per character, takes masking from `KEYBOARD_SENSITIVE_INPUT`, and falls back to an in-app dialog with Pinyin composition and the linked OpenCC dictionary for Traditional Chinese |
+| `platform/switch2/borealis/switch_font.cpp` | The upstream loader gives only one font a CJK fallback chain. The replacement loads the Standard, Simplified, Extended Simplified, Traditional, Korean and Nintendo symbol shared fonts and hangs the whole chain off both `FONT_REGULAR` and `FONT_CHINESE_SIMPLIFIED`, so mixed Latin/CJK strings do not render tofu |
+| `platform/switch2/switch2_pointer.{hpp,cpp}`, `switch2_pointer_device.hpp` | The `PadPointer`/Nmouse glue and the pure decisions behind it (viewport transform, touch domain, button claims, cursor arbitration, hover state) that the host tests exercise without a console |
+| `platform/switch2/switch2_cjk.hpp` | Pure text decisions shared with the host tests: the UTF-8 keyboard buffer, the sensitive-input flag, the Pinyin fallback table and composer, and the shared-font chain |
+| `platform/switch2/switch2_display.{hpp,cpp}` | The display decisions: what the console reports (`appletGetDefaultDisplayResolution`, `appletGetOperationMode`), what it can refresh at (`vi2QueryDisplayRefreshRate`, `vi2QueryDisplayModeCapability`, a `vi2SetDisplay120HzCapability` capability declaration), and how that becomes a framebuffer, a GL viewport and a Borealis logical size. All of it best effort: VI2 may answer busy while OunceVK owns the window, and 120 Hz presentation itself is Gate G1 |
+| `platform/switch2/lifecycle_probe.{hpp,cpp}` | The pre-playback probe (`audoutInitialize`/`audoutListAudioOuts` over libounce's `aud:u` route plus `nifm` connection, address and DNS state, one sanitized `boot.log` line), the network watch that polls `nifm` for a reconnect without a console sleep, and the teardown order the platform destructor follows |
 
 `platform/switch2/compat/SDL2/SDL.h` exists because devkitPro's SDL2 only puts
 `.../portlibs/switch/include/SDL2` on the include path, and adding its parent
@@ -173,7 +183,7 @@ fails before the window exists says so on a text console. Keep
 
 ## Tests
 
-`ctest --preset desktop-release` runs four host checks (built when
+`ctest --preset desktop-release` runs five host checks (built when
 `WILIWILI_BUILD_TESTS=ON`):
 
 - `config_pins` (`tests/config_test.cpp`) checks that `UPSTREAM.json` still
@@ -194,6 +204,16 @@ fails before the window exists says so on a text console. Keep
 - `switch2_artifact_audit` runs `scripts/switch2/audit-nro.sh` against
   `build/switch2-release`. It skips itself when the cross toolchain or the
   artifacts are absent, so a desktop-only checkout stays green.
+- `switch2_input` (`tests/switch2_input_test.cpp`) checks the input and text
+  decisions that do not need hardware: the framebuffer-to-logical viewport
+  transform, touch mapped through the digitizer's own 1920x1080 domain (and the
+  1280x720 fallback) rather than the pointer's framebuffer scale, the button
+  claim latching across frames while an idle pad reports no buttons, cursor
+  arbitration, when a hover frame is drawn, wheel-to-scroll mapping, the UTF-8
+  keyboard buffer and the `KEYBOARD_SENSITIVE_INPUT` flag (kept out of Borealis'
+  0..7 disable bits and never mapped onto `SwkbdKeyDisableBitmask`), proxy-URL
+  credential detection, the Pinyin fallback table and composer, and the shared
+  CJK font chain.
 - `switch2_lifecycle` (`tests/switch2_lifecycle_test.cpp`) checks the console
   lifecycle decisions that do not need hardware: the framebuffer fitted from the
   reported output mode (1080p handheld passes through, a 4K docked report is
@@ -201,8 +221,10 @@ fails before the window exists says so on a text console. Keep
   decoding and the diagnostics line that keeps render size, refresh rate and
   output mode apart, the presentation pacer (full rate while busy, 30 Hz after a
   quiet second, never overriding a frame rate the user pinned), the
-  pre-playback probe state machine and its sanitized summary, and the teardown
-  order the platform destructor follows.
+  pre-playback probe state machine and its sanitized summary (including a probe
+  that skips the audio route while playback owns it), the 2 s `nifm` network
+  watch that turns a reconnect or an address change into a socket and DNS reset,
+  and the teardown order the platform destructor follows.
 
 ## Switch 2 SDK capability review
 
@@ -212,12 +234,12 @@ not from documentation. `aarch64-none-elf-g++ (devkitA64) 15.2.0`, newlib
 
 | Capability | Verified API | Use in this port |
 |---|---|---|
-| Joy-Con 2 mouse / pointer | `switch/runtime/pad.h`: `PadPointer` (`active`, `engaged`, `side`, `x`, `y`, `delta_x`, `delta_y`, `wheel_delta_y`, `buttons_cur/old`), `PadPointerSide_Left/Right`, `padPointerInitialize(width, height)`, `padPointerUpdate(pad)` per frame, `padPointerGetButtons[Down/Up]`; `switch2/services/nmouse.h`: `HidNmouseState`, `HidNmouseStateWithDelta`, `hidInitializeNmouse(buffer, size, width, height, pointer_type)`, `hidGetNmouseHandles`, `hidGetNmouseStates`, `HidNmouseButtonConfigJoyLeftJcms/JoyRightJcms/StandardMouse` | Feeds Borealis' mouse abstraction (pointer, drag, scroll) for gate G1. Both the Joy-Con 2 pointer and a standard USB mouse are covered |
-| Display and refresh | `switch2/services/vi2.h` (`vi2QueryDisplayRefreshRate`, `vi2QueryDisplayModeCapability`, `vi2SetDisplay120HzCapability`), `appletGetDefaultDisplayResolution` + its change event, `appletGetOperationMode`, `switch2/services/gsv.h`, `switch/display/{native_window,framebuffer,buffer_producer,binder,parcel}.h` | SDL2 window on an EGL surface; dock/undock, refresh reporting and the 120 Hz request are wired in `platform/switch2/switch2_display.cpp`, see `docs/g1-checklist.md` for what still needs the console |
+| Joy-Con 2 mouse / pointer | `switch/runtime/pad.h`: `PadPointer` (`active`, `side`, `x`, `y`, `delta_x`, `delta_y`, `wheel_delta_y`; there is no `engaged` field), `PadPointerSide_Left/Right`, `padPointerInitialize(PadPointer*, int width, int height)`, `padPointerUpdate(pad)` per frame, `padPointerGetButtons(PadPointer*)` returning `HidMouseButton` bits (not `HidNpadButton_*`); `switch2/services/nmouse.h`: `HidNmouseState`, `HidNmouseStateWithDelta`, `hidInitializeNmouse(buffer, size, width, height, pointer_type)`, `hidGetNmouseHandles`, `hidGetNmouseStates`, `HidNmouseButtonConfigJoyLeftJcms/JoyRightJcms/StandardMouse` | Feeds Borealis' mouse abstraction (pointer, drag, scroll) for gate G1. Both the Joy-Con 2 pointer and a standard USB mouse are covered |
+| Display and refresh | `switch2/services/vi2.h` (`vi2QueryDisplayRefreshRate`, `vi2QueryDisplayModeCapability`, `vi2SetDisplay120HzCapability`), `appletGetDefaultDisplayResolution` + its change event, `appletGetOperationMode`, `switch2/services/gsv.h`, `switch/display/{native_window,framebuffer,buffer_producer,binder,parcel}.h` | SDL2 window on an EGL surface; dock/undock and refresh reporting are wired in `platform/switch2/switch2_display.cpp`. `vi2SetDisplay120HzCapability` only declares the capability to VI2; the read-back rate drives the diagnostics and the idle pacing, and 120 Hz presentation through OunceVK/Zink is a gate G1 item on the console, see `docs/g1-checklist.md` |
 | GPU / graphics | OunceVK `portlibs/switch2/lib/libEGL.a` (EGL, OpenGL, GLES 3.1 through Zink), `libvulkan.a` (Mesa NVK, Vulkan 1.4), empty `libGLESv2.a`/`libglapi.a`/`libdrm_nouveau.a` stubs; pkg-config `egl`, `glesv2`, `gl`, `vulkan`, `libdrm_nouveau` version `26.2.2` | The existing MPVCore framebuffer GL path and Borealis' nanovg GL driver, unchanged |
 | Hardware video decode | `switch2/services/viddec.h`: `ViddecCodec`, `ViddecOutputFormat`, `ViddecTilingMode`, `viddecOpenDecoder`, `viddecDecoder{Initialize,Start,Stop,Flush,Submit,AcquireImage,GetOutputProperties,ReleaseImage}`, NV12 image pools (`viddecImagePoolCreate`, `viddecImagePoolReadNv12`, `viddecCopyImageNv12`) with `GsvNativeSync` producer/consumer fences | Deferred: software decoding is the baseline (ADR 0001). The zero-copy or bounded-copy path is the post-G2 hardware track, decided at G3 |
 | Audio | `switch/audio/audio.h`, `switch/audio/driver.h` | SDL2 audio output through the libnx-compatible driver; no change needed for the software baseline |
-| Lifecycle and applets | `switch/services/applet.h`, `switch/applets/swkbd.h` (`swkbdCreate`, `swkbdConfig`), `switch2/services/audu.h` | Applet and lifecycle hooks feed the Borealis Switch platform; the software keyboard is the path for Chinese search input later |
+| Lifecycle and applets | `switch/services/applet.h`, `switch/applets/swkbd.h` (`swkbdCreate`, `swkbdConfig`, `SwkbdType_All`), `switch2/services/audu.h` | Applet and lifecycle hooks feed the Borealis Switch platform; the system keyboard covers Chinese input, with an in-app Pinyin fallback when it cannot start |
 | Shared fonts | `switch/services/pl.h`: `plGetSharedFont`, `plGetSharedFontByType` | CJK glyph fallback from the system font service, so no console font binary has to be redistributed |
 | kaiHEN | `libkaihen` (`kaihen.h`, `libkaihen.a`, `libkaihen_plugin.a`, `kaihen-jit.o`) | Not used. No plugin, JIT or gaming-only feature is imported |
 

@@ -41,29 +41,34 @@
 #include "utils/boot_diagnostics.hpp"
 #include "switch2_display.hpp"
 
-namespace
-{
+namespace {
 
-const char* glString(GLenum name)
-{
+const char* glString(GLenum name) {
     const GLubyte* value = glGetString(name);
     return value ? reinterpret_cast<const char*>(value) : "(unavailable)";
 }
 
-std::string apiVersionString(uint32_t version)
-{
+// SDL reports its failure through SDL_GetError(), and a black screen is the one
+// thing this port must not produce: the reason goes to the log and to boot.log,
+// then the boot stops.
+[[noreturn]] void failSdl(const std::string& what) {
+    const std::string error = fmt::format("{}: {}", what, SDL_GetError());
+    brls::Logger::error("sdl: {}", error);
+    wiliwili_boot_note("sdl", error.c_str());
+    brls::fatal(error);
+}
+
+std::string apiVersionString(uint32_t version) {
     return fmt::format("{}.{}.{}", VK_API_VERSION_MAJOR(version), VK_API_VERSION_MINOR(version),
-        VK_API_VERSION_PATCH(version));
+                       VK_API_VERSION_PATCH(version));
 }
 
 // glGetString(GL_EXTENSIONS) is one space separated line; "(unavailable)" is
 // what glString() returns when there is no context to ask.
-std::vector<std::string> splitExtensions(const char* list)
-{
+std::vector<std::string> splitExtensions(const char* list) {
     std::vector<std::string> extensions;
     if (!list || !list[0] || list[0] == '(') return extensions;
-    for (const char* cursor = list; *cursor;)
-    {
+    for (const char* cursor = list; *cursor;) {
         const char* end = cursor;
         while (*end && *end != ' ') ++end;
         extensions.emplace_back(cursor, end);
@@ -72,44 +77,35 @@ std::vector<std::string> splitExtensions(const char* list)
     return extensions;
 }
 
-std::vector<std::string> instanceExtensionNames()
-{
+std::vector<std::string> instanceExtensionNames() {
     std::vector<std::string> names;
     uint32_t count = 0;
     if (vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr) != VK_SUCCESS || !count) return names;
     std::vector<VkExtensionProperties> properties(count);
     if (vkEnumerateInstanceExtensionProperties(nullptr, &count, properties.data()) != VK_SUCCESS) return names;
     names.reserve(count);
-    for (uint32_t i = 0; i < count; ++i)
-        names.emplace_back(properties[i].extensionName);
+    for (uint32_t i = 0; i < count; ++i) names.emplace_back(properties[i].extensionName);
     return names;
 }
 
-std::vector<std::string> deviceExtensionNames(VkPhysicalDevice device)
-{
+std::vector<std::string> deviceExtensionNames(VkPhysicalDevice device) {
     std::vector<std::string> names;
     uint32_t count = 0;
-    if (vkEnumerateDeviceExtensionProperties(device, nullptr, &count, nullptr) != VK_SUCCESS || !count)
-        return names;
+    if (vkEnumerateDeviceExtensionProperties(device, nullptr, &count, nullptr) != VK_SUCCESS || !count) return names;
     std::vector<VkExtensionProperties> properties(count);
-    if (vkEnumerateDeviceExtensionProperties(device, nullptr, &count, properties.data()) != VK_SUCCESS)
-        return names;
+    if (vkEnumerateDeviceExtensionProperties(device, nullptr, &count, properties.data()) != VK_SUCCESS) return names;
     names.reserve(count);
-    for (uint32_t i = 0; i < count; ++i)
-        names.emplace_back(properties[i].extensionName);
+    for (uint32_t i = 0; i < count; ++i) names.emplace_back(properties[i].extensionName);
     return names;
 }
 
 // One boot.log line per report line, and the same text to the regular log.
-void writeReport(const char* stage, const std::string& report)
-{
+void writeReport(const char* stage, const std::string& report) {
     size_t start = 0;
-    while (start < report.size())
-    {
+    while (start < report.size()) {
         const size_t end       = report.find('\n', start);
         const std::string line = report.substr(start, end == std::string::npos ? std::string::npos : end - start);
-        if (!line.empty())
-        {
+        if (!line.empty()) {
             brls::Logger::info("switch2: {}", line);
             wiliwili_boot_note(stage, line.c_str());
         }
@@ -122,8 +118,7 @@ void writeReport(const char* stage, const std::string& report)
 // tells us whether OunceVK got NVK, and the extensions it offers are what says
 // whether the console's own display surface (VK_NN_vi_surface) and the GPU
 // memory sharing behind it are there. Purely informational, never fatal.
-void reportVulkanDevice()
-{
+void reportVulkanDevice() {
     wili::GpuDiagnostics vulkan;
     vulkan.api = "Vulkan (OunceVK)";
 
@@ -148,18 +143,13 @@ void reportVulkanDevice()
     createInfo.pApplicationInfo     = &application;
 
     VkInstance instance = VK_NULL_HANDLE;
-    if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS)
-    {
+    if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
         vulkan.fields.push_back({"vkInstance", "not available"});
-    }
-    else
-    {
+    } else {
         uint32_t deviceCount = 0;
-        if (vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr) == VK_SUCCESS && deviceCount > 0)
-        {
+        if (vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr) == VK_SUCCESS && deviceCount > 0) {
             std::vector<VkPhysicalDevice> devices(deviceCount);
-            if (vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data()) == VK_SUCCESS && deviceCount > 0)
-            {
+            if (vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data()) == VK_SUCCESS && deviceCount > 0) {
                 VkPhysicalDeviceProperties properties = {};
                 vkGetPhysicalDeviceProperties(devices[0], &properties);
                 vulkan.fields.push_back({"vkDeviceName", properties.deviceName});
@@ -169,9 +159,7 @@ void reportVulkanDevice()
                 vulkan.fields.push_back({"vkDeviceCount", fmt::format("{}", deviceCount)});
                 deviceExtensions = deviceExtensionNames(devices[0]);
             }
-        }
-        else
-        {
+        } else {
             vulkan.fields.push_back({"vkPhysicalDevices", "none"});
         }
         vkDestroyInstance(instance, nullptr);
@@ -179,13 +167,11 @@ void reportVulkanDevice()
 
     std::string report = wili::formatGpuDiagnostics(vulkan);
     report += wili::formatExtensionList("vkInstanceExtensions", instanceExtensions);
-    if (!deviceExtensions.empty())
-        report += wili::formatExtensionList("vkDeviceExtensions", deviceExtensions);
+    if (!deviceExtensions.empty()) report += wili::formatExtensionList("vkDeviceExtensions", deviceExtensions);
     writeReport("gpu", report);
 }
 
-void reportGraphicsCapabilities()
-{
+void reportGraphicsCapabilities() {
     wili::GpuDiagnostics gl;
     gl.api    = "OpenGL ES (Zink)";
     gl.fields = {
@@ -202,25 +188,17 @@ void reportGraphicsCapabilities()
     reportVulkanDevice();
 }
 
-} // namespace
+}  // namespace
 
-namespace brls
-{
+namespace brls {
 
-SDLVideoContext::SDLVideoContext(std::string windowTitle, uint32_t windowWidth, uint32_t windowHeight, float, float)
-{
+SDLVideoContext::SDLVideoContext(std::string windowTitle, uint32_t windowWidth, uint32_t windowHeight, float, float) {
     const wili::Framebuffer preferred = wili::preferredWindowSize(windowWidth, windowHeight);
     windowWidth                       = preferred.width;
     windowHeight                      = preferred.height;
     brls::Logger::info("switch2: requesting a {}x{} window", windowWidth, windowHeight);
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0)
-    {
-        const std::string error = fmt::format("SDL_Init failed: {}", SDL_GetError());
-        brls::Logger::error("sdl: {}", error);
-        wiliwili_boot_note("sdl", error.c_str());
-        fatal(error);
-    }
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) failSdl("SDL_Init failed");
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
@@ -230,36 +208,17 @@ SDLVideoContext::SDLVideoContext(std::string windowTitle, uint32_t windowWidth, 
     SDL_GL_SetAttribute(SDL_GL_RETAINED_BACKING, 0);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
 
-    this->window = SDL_CreateWindow(windowTitle.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-        windowWidth, windowHeight, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
-    if (!this->window)
-    {
-        const std::string error = fmt::format("SDL_CreateWindow failed: {}", SDL_GetError());
-        brls::Logger::error("sdl: {}", error);
-        wiliwili_boot_note("sdl", error.c_str());
-        fatal(error);
-    }
+    this->window = SDL_CreateWindow(windowTitle.c_str(), SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, windowWidth,
+                                    windowHeight, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
+    if (!this->window) failSdl("SDL_CreateWindow failed");
     brls::Logger::info("switch2: SDL video driver: {}", SDL_GetCurrentVideoDriver());
 
     SDL_GLContext context = SDL_GL_CreateContext(this->window);
-    if (!context)
-    {
-        const std::string error = fmt::format("SDL_GL_CreateContext failed: {}", SDL_GetError());
-        brls::Logger::error("sdl: {}", error);
-        wiliwili_boot_note("sdl", error.c_str());
-        fatal(error);
-    }
-    if (SDL_GL_MakeCurrent(this->window, context) < 0)
-    {
-        const std::string error = fmt::format("SDL_GL_MakeCurrent failed: {}", SDL_GetError());
-        brls::Logger::error("sdl: {}", error);
-        wiliwili_boot_note("sdl", error.c_str());
-        fatal(error);
-    }
+    if (!context) failSdl("SDL_GL_CreateContext failed");
+    if (SDL_GL_MakeCurrent(this->window, context) < 0) failSdl("SDL_GL_MakeCurrent failed");
     wiliwili_boot_note("sdl", "GLES context created");
 
-    if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress))
-    {
+    if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress)) {
         wiliwili_boot_note("sdl", "gladLoadGLLoader failed");
         fatal("gladLoadGLLoader failed");
     }
@@ -267,8 +226,7 @@ SDLVideoContext::SDLVideoContext(std::string windowTitle, uint32_t windowWidth, 
     reportGraphicsCapabilities();
 
     this->nvgContext = nvgCreateGLES2(NVG_STENCIL_STROKES | NVG_ANTIALIAS);
-    if (!this->nvgContext)
-    {
+    if (!this->nvgContext) {
         wiliwili_boot_note("sdl", "nvgCreateGLES2 failed");
         fatal("sdl: unable to init nanovg");
     }
@@ -291,8 +249,7 @@ SDLVideoContext::SDLVideoContext(std::string windowTitle, uint32_t windowWidth, 
     SDL_GetWindowPosition(this->window, &xPos, &yPos);
     Application::setWindowPosition(xPos, yPos);
 
-    if (!VideoContext::FULLSCREEN)
-    {
+    if (!VideoContext::FULLSCREEN) {
         VideoContext::sizeW = width;
         VideoContext::sizeH = height;
         VideoContext::posX  = static_cast<float>(xPos);
@@ -302,13 +259,9 @@ SDLVideoContext::SDLVideoContext(std::string windowTitle, uint32_t windowWidth, 
 
 void SDLVideoContext::beginFrame() {}
 
-void SDLVideoContext::endFrame()
-{
-    SDL_GL_SwapWindow(this->window);
-}
+void SDLVideoContext::endFrame() { SDL_GL_SwapWindow(this->window); }
 
-void SDLVideoContext::setSwapInterval(int interval)
-{
+void SDLVideoContext::setSwapInterval(int interval) {
     VideoContext::swapInterval = interval;
     if (SDL_GL_SetSwapInterval(interval) < 0)
         brls::Logger::warning("switch2: SDL_GL_SetSwapInterval({}) failed: {}", interval, SDL_GetError());
@@ -317,14 +270,12 @@ void SDLVideoContext::setSwapInterval(int interval)
     brls::Logger::info("switch2: swap interval {} (effective {})", interval, SDL_GL_GetSwapInterval());
 }
 
-void SDLVideoContext::clear(NVGcolor color)
-{
+void SDLVideoContext::clear(NVGcolor color) {
     glClearColor(color.r, color.g, color.b, color.a);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 }
 
-void SDLVideoContext::resetState()
-{
+void SDLVideoContext::resetState() {
     glDisable(GL_CULL_FACE);
     glDisable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
@@ -332,31 +283,20 @@ void SDLVideoContext::resetState()
     glDisable(GL_STENCIL_TEST);
 }
 
-double SDLVideoContext::getScaleFactor()
-{
-    return wili::displayScaleFactor();
-}
+double SDLVideoContext::getScaleFactor() { return wili::displayScaleFactor(); }
 
-SDLVideoContext::~SDLVideoContext()
-{
+SDLVideoContext::~SDLVideoContext() {
     if (this->nvgContext) nvgDeleteGLES2(this->nvgContext);
     SDL_DestroyWindow(this->window);
     SDL_Quit();
 }
 
-NVGcontext* SDLVideoContext::getNVGContext()
-{
-    return this->nvgContext;
-}
+NVGcontext* SDLVideoContext::getNVGContext() { return this->nvgContext; }
 
-SDL_Window* SDLVideoContext::getSDLWindow()
-{
-    return this->window;
-}
+SDL_Window* SDLVideoContext::getSDLWindow() { return this->window; }
 
-void SDLVideoContext::fullScreen(bool fs)
-{
+void SDLVideoContext::fullScreen(bool fs) {
     SDL_SetWindowFullscreen(this->window, fs ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
 }
 
-} // namespace brls
+}  // namespace brls

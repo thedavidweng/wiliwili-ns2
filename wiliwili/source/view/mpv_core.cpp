@@ -12,6 +12,7 @@
 #include "utils/config_helper.hpp"
 #include "utils/number_helper.hpp"
 #include "utils/crash_helper.hpp"
+#include "utils/platform_api.h"
 #include "view/mpv_core.hpp"
 
 #ifdef MPV_BUNDLE_DLL
@@ -1171,6 +1172,11 @@ void MPVCore::reset() {
 
 void MPVCore::setUrl(const std::string &url, const std::string &extra, const std::string &method) {
     brls::Logger::debug("{} Url: {}, extra: {}", method, url, extra);
+#if defined(__SWITCH2__)
+    // The console asks for one probe before a stream is opened: the audio route
+    // and the socket state are what a silent failure is caused by.
+    wiliwili_pre_playback_probe();
+#endif
     if (extra.empty()) {
         command_async("loadfile", url, method);
     } else {

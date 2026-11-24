@@ -17,29 +17,16 @@
 #include <string>
 #include <vector>
 
+#include "test_check.hpp"
+
 namespace {
 
 using json = nlohmann::json;
 
-int failures = 0;
+using test_check::check;
+using test_check::failures;
 
-void check(bool ok, const char* what, int line) {
-    if (ok) return;
-    std::cerr << "FAIL (line " << line << "): " << what << '\n';
-    ++failures;
-}
-
-#define CHECK(cond) check((cond), #cond, __LINE__)
-
-std::string read(const std::string& relative) {
-    std::ifstream file(std::string(WILIWILI_SOURCE_DIR) + "/" + relative);
-    if (!file) {
-        std::cerr << "FAIL: cannot read " << relative << '\n';
-        ++failures;
-        return {};
-    }
-    return std::string{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-}
+std::string read(const std::string& relative) { return test_check::readSource(relative); }
 
 json parse(const std::string& relative) {
     try {
@@ -84,8 +71,8 @@ void check_no_floating_pins(const json& node, const std::string& path) {
         for (const auto& entry : node) check_no_floating_pins(entry, path);
     } else if (node.is_string()) {
         const std::string& text = node.get_ref<const std::string&>();
-        const bool floating = text == "latest" || text == "head" ||
-                              (text.size() > 7 && text.compare(text.size() - 7, 7, ":latest") == 0);
+        const bool floating =
+            text == "latest" || text == "head" || (text.size() > 7 && text.compare(text.size() - 7, 7, ":latest") == 0);
         if (floating) {
             std::cerr << "FAIL: floating pin at " << path << ": " << text << '\n';
             ++failures;
@@ -99,8 +86,7 @@ void check_upstream_pins() {
     CHECK(at(upstream, "upstream/commit") == "88e5876bea9502d06f46a8656e3530684d3aaf7d");
     CHECK(at(upstream, "upstream/version") == "v1.6.0");
     CHECK(at(upstream, "integrated_fork/commit") == "e5dd00d06f4b1ee3e38465a1e1cbd5223002faa6");
-    CHECK(at(upstream, "references/openblops_nx/commit") ==
-          "302b036471e8c8fea0918366218025418362dc81");
+    CHECK(at(upstream, "references/openblops_nx/commit") == "302b036471e8c8fea0918366218025418362dc81");
 
     // Submodule gitlinks are recorded, and borealis is still the upstream
     // subtree the UI framework comes from (ADR 0005).
@@ -109,24 +95,19 @@ void check_upstream_pins() {
     for (auto entry = submodules.begin(); entry != submodules.end(); ++entry) {
         check(is_hex(entry.value(), 40), entry.key().c_str(), __LINE__);
     }
-    CHECK(submodules.value("library/borealis", std::string()) ==
-          "5f08b286f3df737f3321d2247a6fe633fcead03c");
+    CHECK(submodules.value("library/borealis", std::string()) == "5f08b286f3df737f3321d2247a6fe633fcead03c");
 
     // Each of the six dragonfly/dev commits is either integrated or skipped,
     // and the two sets do not overlap.
     const std::set<std::string> dragonfly_commits = {
-            "031ddf97d967614aa2086963ed9caff96b65e031",
-            "5dccf14651991f81581daed54796b8d03e4741e2",
-            "2f583df3edeca2c67d4e48da715cc473d75aa15a",
-            "64538394481a74de0981d2d0a5d1730e477e00ee",
-            "62e6ec18ffb065779b1b1d60c12b40f1e61b9805",
-            "e5dd00d06f4b1ee3e38465a1e1cbd5223002faa6",
+        "031ddf97d967614aa2086963ed9caff96b65e031", "5dccf14651991f81581daed54796b8d03e4741e2",
+        "2f583df3edeca2c67d4e48da715cc473d75aa15a", "64538394481a74de0981d2d0a5d1730e477e00ee",
+        "62e6ec18ffb065779b1b1d60c12b40f1e61b9805", "e5dd00d06f4b1ee3e38465a1e1cbd5223002faa6",
     };
     std::set<std::string> accounted;
     for (const char* key : {"integrated", "skipped"}) {
         for (const auto& entry : at(upstream, std::string("integrated_fork/") + key)) {
-            const std::string sha = entry.is_object() ? entry.value("commit", std::string())
-                                                      : entry.get<std::string>();
+            const std::string sha = entry.is_object() ? entry.value("commit", std::string()) : entry.get<std::string>();
             CHECK(is_hex(sha, 40));
             CHECK(accounted.insert(sha).second);
         }
@@ -134,8 +115,9 @@ void check_upstream_pins() {
     CHECK(accounted == dragonfly_commits);
 
     const std::string base_image = at(upstream, "switch2_toolchain/base_image");
-    CHECK(base_image == "docker.io/devkitpro/devkita64:20260219"
-                        "@sha256:1fc388c3a0d34bd2045a6dadcb1020e069d5f876a187fd705de14b4440c00282");
+    CHECK(base_image ==
+          "docker.io/devkitpro/devkita64:20260219"
+          "@sha256:1fc388c3a0d34bd2045a6dadcb1020e069d5f876a187fd705de14b4440c00282");
     CHECK(at(upstream, "switch2_toolchain/compiler") == "aarch64-none-elf-g++ (devkitA64) 15.2.0");
     CHECK(at(upstream, "switch2_toolchain/newlib") == "4.6.0.20260123");
     CHECK(at(upstream, "switch2_toolchain/ounce_repository") == "https://pkg.ouncebrew.org");
@@ -143,8 +125,7 @@ void check_upstream_pins() {
 
     // The three [ounce] packages ship as one version and must not float.
     for (const char* package : {"libounce", "ouncevk", "libkaihen"}) {
-        CHECK(at(upstream, std::string("switch2_toolchain/ounce_packages/") + package) ==
-              "20261117.1-1");
+        CHECK(at(upstream, std::string("switch2_toolchain/ounce_packages/") + package) == "20261117.1-1");
     }
 
     // The software-decoding baseline of ADR 0001, by package and by digest.
@@ -161,8 +142,8 @@ void check_upstream_pins() {
     // The container installs exactly what UPSTREAM.json records.
     const std::string dockerfile = read("scripts/switch2/Dockerfile");
     CHECK(dockerfile.find(base_image) != std::string::npos);
-    CHECK(dockerfile.find(at(upstream, "switch2_toolchain/ounce_signing_key_fingerprint")
-                                  .get<std::string>()) != std::string::npos);
+    CHECK(dockerfile.find(at(upstream, "switch2_toolchain/ounce_signing_key_fingerprint").get<std::string>()) !=
+          std::string::npos);
     for (auto entry = portlibs.begin(); entry != portlibs.end(); ++entry) {
         CHECK(dockerfile.find(entry.key()) != std::string::npos);
         CHECK(dockerfile.find(at(entry.value(), "sha256").get<std::string>()) != std::string::npos);
@@ -180,7 +161,7 @@ json find_named(const json& list, const std::string& name) {
 // The presets share one hidden "base" preset, so resolve a configure preset
 // against its parent before checking the effective values.
 json resolve_configure(const json& configure_presets, const std::string& name) {
-    json preset = find_named(configure_presets, name);
+    json preset              = find_named(configure_presets, name);
     const std::string parent = preset.value("inherits", std::string());
     if (preset.is_null() || parent.empty()) return preset;
 
@@ -236,12 +217,11 @@ void check_presets() {
         // OpenCC off and does not fit in the 2 GB build container.
         CHECK(at(switch2, cache + "USE_LIBROMFS") == "OFF");
         CHECK(at(switch2, cache + "CMAKE_BUILD_TYPE") == "Release");
-        CHECK(at(switch2, "toolchainFile").get<std::string>().find(
-                      "libounce/cmake/Switch2.cmake") != std::string::npos);
+        CHECK(at(switch2, "toolchainFile").get<std::string>().find("libounce/cmake/Switch2.cmake") !=
+              std::string::npos);
         // Release flags stay safe, and -g keeps the unstripped .elf usable.
-        const json release_flags_json = at(switch2, cache + "CMAKE_CXX_FLAGS_RELEASE");
-        const std::string release_flags =
-                release_flags_json.is_string() ? release_flags_json.get<std::string>() : "";
+        const json release_flags_json   = at(switch2, cache + "CMAKE_CXX_FLAGS_RELEASE");
+        const std::string release_flags = release_flags_json.is_string() ? release_flags_json.get<std::string>() : "";
         CHECK(release_flags.find("-g") != std::string::npos);
         CHECK(release_flags.find("ffast-math") == std::string::npos);
     }
@@ -307,10 +287,5 @@ int main() {
     check_presets();
     check_switch2_wiring();
 
-    if (failures != 0) {
-        std::cerr << failures << " check(s) failed\n";
-        return 1;
-    }
-    std::cout << "all configuration checks passed\n";
-    return 0;
+    return test_check::report("all configuration checks passed");
 }

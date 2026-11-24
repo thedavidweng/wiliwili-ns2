@@ -3,7 +3,11 @@
 //
 
 #pragma once
+#include <cerrno>
+#include <cstdint>
+#include <cstdlib>
 #include <iostream>
+#include <string>
 #include <ctime>
 #include <chrono>
 
@@ -17,6 +21,23 @@
 #endif
 
 namespace wiliwili {
+
+// Parses the decimal id an API result carries (an uploader's mid, an aid).
+// A malformed, empty or out of range field is a normal API answer, not an
+// exception: std::stoull would throw inside the UI thread. Returns false and
+// leaves `id` untouched. The leading-digit check matters: strtoull alone would
+// accept a sign and leading spaces.
+inline bool parseUid(const std::string& text, uint64_t& id) {
+    if (text.empty() || text.front() < '0' || text.front() > '9') return false;
+
+    errno                          = 0;
+    char* end                      = nullptr;
+    const unsigned long long value = std::strtoull(text.c_str(), &end, 10);
+    if (end != text.c_str() + text.size() || errno == ERANGE) return false;
+
+    id = value;
+    return true;
+}
 
 inline std::string pre0(size_t num, size_t length) {
     std::string str = std::to_string(num);

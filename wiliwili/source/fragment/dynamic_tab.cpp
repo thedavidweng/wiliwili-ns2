@@ -12,6 +12,7 @@
 #include "view/video_card.hpp"
 #include "view/dynamic_article.hpp"
 #include "utils/image_helper.hpp"
+#include "utils/number_helper.hpp"
 #include "utils/activity_helper.hpp"
 #include "utils/shortcut_helper.hpp"
 
@@ -98,7 +99,13 @@ public:
             item->setSelected(true);
         } else {
             // 选择具体的某个up主
-            userSelectedEvent.fire(std::stoull(list[index - 1].mid));
+            // mid 是接口字段：缺失或格式错误时不能让 UI 线程抛异常
+            uint64_t mid = 0;
+            if (!wiliwili::parseUid(list[index - 1].mid, mid)) {
+                brls::Logger::warning("dynamic: malformed mid '{}', ignoring the selection", list[index - 1].mid);
+                return;
+            }
+            userSelectedEvent.fire(mid);
             // 移除小红点
             auto* item = dynamic_cast<DynamicUserInfoView*>(recycler->getGridItemByIndex(index));
             if (!item) return;

@@ -238,8 +238,9 @@ The image and every package in it is pinned in `UPSTREAM.json`;
 `cmake/Switch2Platform.cmake` re-applies the libounce platform after Borealis'
 Switch 1 toolchain branch. `build` picks `-j 1` when the container has less than
 4 GB of RAM, because `cc1plus` is OOM-killed otherwise. The Switch 2 sources kept
-in this repository (`platform/switch2/`) replace Borealis' SDL video backend and
-entry point, so `library/borealis` stays at its pinned commit. Settings and
+in this repository (`platform/switch2/`) replace Borealis' SDL video, Switch
+platform, input, keyboard and font backends and its `userAppInit` entry point, so
+`library/borealis` stays at its pinned commit. Settings and
 `boot.log` live in `/config/wiliwili-ns2/`, never in Switch 1's
 `/config/wiliwili/`.
 
@@ -308,6 +309,9 @@ docker run --rm -v $(pwd):/src/ xfangfang/wiliwili_ps4_builder:latest \
 | `__SWITCH2__` | Switch 2 ([ounce] devkit: libounce, OunceVK) |
 | `__PSV__` | PlayStation Vita |
 | `PS4` | PlayStation 4 |
+| `ANDROID` | Android |
+| `IOS` | iOS |
+| `TRIMUI` | TrimUI handheld |
 | `BOREALIS_USE_OPENGL` / `BOREALIS_USE_DEKO3D` / `BOREALIS_USE_D3D11` / `BOREALIS_USE_GXM` | Rendering backend |
 | `MPV_USE_FB` / `MPV_NO_FB` | Framebuffer mode (auto-derived from above) |
 | `USE_WEBP` | WebP image decoding enabled |
@@ -338,9 +342,18 @@ docker run --rm -v $(pwd):/src/ xfangfang/wiliwili_ps4_builder:latest \
 | `UPSTREAM.json` | Pinned upstream/reference commits, submodule gitlinks, container digest, package versions and sha256 |
 | `cmake/Switch2Platform.cmake` | Re-applies the libounce/OunceVK platform after Borealis' Switch 1 toolchain branch |
 | `scripts/switch2/` | Switch 2 container (`Dockerfile`), helper (`build.sh`) and artifact audit (`audit-nro.sh`) |
-| `platform/switch2/` | Switch 2 replacements for Borealis' SDL video backend and entry point, used only with `PLATFORM_SWITCH2=ON` |
+| `platform/switch2/` | Switch 2 replacements for Borealis' SDL video, Switch platform, input, keyboard and font backends plus the `userAppInit` entry point (`borealis/`), and the port's own pointer, CJK, display and lifecycle code; used only with `PLATFORM_SWITCH2=ON`, wired through `HEADER_FILE_ONLY` in `library/CMakeLists.txt` |
+| `wiliwili/include/utils/platform_api.h` | The `extern "C"` seam between `wiliwili` code and the platform: `wiliwili_network_reset()`, `wiliwili_pre_playback_probe()`, `wiliwili_proxy_is_sensitive()`, and `KEYBOARD_SENSITIVE_INPUT` (`1 << 30`, outside Borealis' 0..7 disable bits) |
 | `wiliwili/include/utils/boot_diagnostics.hpp` | `boot.log` notes, config namespaces, GPU report formatting |
+| `platform/switch2/switch2_pointer.hpp` | Pure pointer decisions: viewport transform, touch domain, per-pad button claims, cursor arbitration, hover state |
+| `platform/switch2/switch2_display.hpp` | Pure display decisions: output mode to framebuffer/GL viewport, refresh word decoding, frame pacing |
+| `platform/switch2/lifecycle_probe.hpp` | Pre-playback probe, network watch and teardown order decisions |
+| `platform/switch2/switch2_cjk.hpp` | UTF-8 keyboard buffer, sensitive-input flag, Pinyin fallback table/composer, CJK shared-font chain |
+| `tests/test_check.hpp` | Shared `CHECK`/`CHECK_EQ`, `read_source` and `report` helpers for all host tests |
 | `tests/config_test.cpp` | Host checks for the pins and the Switch 2 configuration (`WILIWILI_BUILD_TESTS=ON`) |
+| `tests/switch2_input_test.cpp` | Host checks for the pointer, touch, claim, hover, keyboard and CJK decisions |
+| `tests/switch2_lifecycle_test.cpp` | Host checks for the probe, network watch, display pacing and teardown order |
+| `docs/g1-checklist.md` | The on-console verification procedure for gate G1 (deploy, which `boot.log` lines to read, what to record) |
 | `docs/building.md` | Build commands and the verified Switch 2 SDK capability review |
 | `scripts/` | Build scripts for each platform; `README.md` covers custom ffmpeg/mpv for Switch |
 
