@@ -1,3 +1,79 @@
+**Switch 2 说明：[中文](#switch-2-自制移植版) · [English](#switch-2-homebrew-port)**
+
+## Switch 2 自制移植版
+
+本仓库是 [wiliwili](https://github.com/xfangfang/wiliwili) 的非官方 Nintendo Switch 2 自制移植版（`wiliwili-NS2`），并非上游官方发布。本项目基于 `[ounce]` 工具链（[libounce](https://github.com/ouncebrew/libounce)、[OunceVK](https://github.com/ouncebrew/ouncevk)）新增了 `platform/switch2/` 平台后端，编译产物为 `wiliwili-NS2.nro`，面向运行 [kaiHEN](https://github.com/ouncebrew/kaihen) 的 Switch 2 主机。上游其他平台的代码保留在仓库中以便同步上游更新，本分支仅构建与分发 Switch 2 版本。遇到 Switch 2 相关问题请提交到[本仓库 Issues](https://github.com/thedavidweng/wiliwili-ns2/issues)，请勿向上游 `xfangfang/wiliwili` 反馈。
+
+基于 wiliwili v1.6.0（`yoga` 分支，commit `88e5876`）修改，并合入了 [dragonflylee/wiliwili](https://github.com/dragonflylee/wiliwili)（`dev` 分支，commit `e5dd00d`）的通用修复；精确依赖与工具链版本锁定见 [`UPSTREAM.json`](UPSTREAM.json)。
+
+### Switch 2 特性
+
+- **图形与播放**：保留 Borealis / NanoVG 界面与 `MPVCore` 播放核心（FFmpeg 7.1 + mpv 0.36.0），通过 SDL2 / EGL / OpenGL ES 运行于 OunceVK（Zink / Mesa NVK Vulkan 1.4）之上，支持 B 站 DASH 音视频播放、同步弹幕、扫码登录、搜索、历史记录、收藏夹、动态、番剧影视与直播；以软件解码为兼容基线与自动回退路径，并在支持的流上接入 `libounce` `VideoDecoder` 硬件解码。
+- **输入与交互**：支持手柄焦点导航、触屏，以及左右 Joy-Con 2 原生光学鼠标模式（`PadPointer` / `Nmouse`：自动启用、缩放光标、点击、悬停、摇杆滚轮、进度条拖拽，并在点击期间锁定对应肩键/扳机键防止重复触发）。
+- **中文输入与字库**：接入系统键盘 `swkbd`（简繁中文输入法，不可用时回退内置输入框），并通过 `pl` 服务在运行时读取系统共享字库渲染中、日、韩字符，不打包任何主机私有字体文件。
+- **显示与生命周期**：原生 1080p 掌机界面，动态检测底座/掌机切换下的输出分辨率与高刷新率（空闲时自动降帧省电），支持睡眠唤醒后的显示、输入、音频与网络重连恢复。
+- **配置隔离与诊断**：配置、登录凭据、自定义主题/字体及启动日志独立存放在 `/config/wiliwili-ns2/`，不读写初代 Switch 的 `/config/wiliwili/`；移除 Google Analytics 遥测（`NO_GA`），启动失败时在文本控制台显示原因并记录到 `boot.log`。
+
+### 安装与配置
+
+从[本仓库 Releases](https://github.com/thedavidweng/wiliwili-ns2/releases) 下载最新发布压缩包并解压到内存卡根目录（路径为 `/switch/wiliwili-ns2/wiliwili-NS2.nro`，或直接将 `wiliwili-NS2.nro` 放到 `/switch/` 目录），在 kaiHEN 自制软件菜单中启动即可。应用数据与 `boot.log` 位于 `/config/wiliwili-ns2/`。
+
+### 编译构建
+
+```sh
+git clone --recursive https://github.com/thedavidweng/wiliwili-ns2.git
+cd wiliwili-ns2
+
+scripts/switch2/build.sh image      # 构建固定摘要的 devkitA64 + [ounce] 工具链容器
+scripts/switch2/build.sh configure  # cmake --preset switch2-release
+scripts/switch2/build.sh build      # 生成 build/switch2-release/wiliwili-NS2.nro 与未裁剪的 wiliwili-NS2.elf
+scripts/switch2/build.sh audit      # 校验 NRO 头、NACP、RomFS 内容与链接映射
+```
+
+桌面端开发构建与宿主测试可执行 `cmake --preset desktop-release && cmake --build --preset desktop-release && ctest --preset desktop-release --output-on-failure`。
+
+Switch 2 平台代码位于 `platform/switch2/`、`cmake/Switch2Platform.cmake` 与 `scripts/switch2/`（`library/borealis` 子模块保持固定提交不作修改）。详细构建说明与 SDK 能力核查见 [`docs/building.md`](docs/building.md)，许可证遵循 [GPL-3.0](LICENSE)。
+
+---
+
+## Switch 2 homebrew port
+
+This fork is an unofficial Nintendo Switch 2 homebrew port of [wiliwili](https://github.com/xfangfang/wiliwili) (`wiliwili-NS2`), not an upstream release. It adds a Switch 2 backend in `platform/switch2/` on the `[ounce]` SDK ([libounce](https://github.com/ouncebrew/libounce), [OunceVK](https://github.com/ouncebrew/ouncevk)) and builds `wiliwili-NS2.nro` for a Switch 2 running [kaiHEN](https://github.com/ouncebrew/kaihen). Upstream platform targets stay in the tree so upstream merges remain clean, while this fork only distributes the Switch 2 build. Report Switch 2 problems in [this fork's issues](https://github.com/thedavidweng/wiliwili-ns2/issues), not to `xfangfang/wiliwili`.
+
+Modified from wiliwili v1.6.0 (`yoga`, commit `88e5876`) with shared fixes from [dragonflylee/wiliwili](https://github.com/dragonflylee/wiliwili) (`dev`, commit `e5dd00d`). Exact revision, container and package pins are recorded in [`UPSTREAM.json`](UPSTREAM.json).
+
+### Features
+
+- **Graphics and playback**: Keeps Borealis / NanoVG and `MPVCore` (FFmpeg 7.1 + mpv 0.36.0) over SDL2 / EGL / OpenGL ES on OunceVK (Zink over Mesa NVK Vulkan 1.4) for Bilibili DASH video/audio streams, synchronized danmaku, QR login, search, watch history, favorites, followed creators, Bangumi/Cinema and live rooms, using software decoding as the compatibility baseline and automatic fallback alongside `libounce` `VideoDecoder` hardware decoding on supported streams.
+- **Input and Joy-Con 2 mouse**: Supports controller navigation, touchscreen, and native left/right Joy-Con 2 optical mouse mode (`PadPointer` / `Nmouse`: automatic engagement, scaled cursor, click, hover, stick-wheel scroll, timeline drag, and `L|ZL` / `R|ZR` click latching so clicks never double-fire shoulder/trigger actions).
+- **Chinese IME and CJK fonts**: Uses `swkbd` for Simplified and Traditional Chinese input (with an in-app keyboard fallback if `swkbd` is unavailable) and loads system shared CJK fonts at runtime via `pl` with zero console font binaries bundled.
+- **Display and lifecycle**: Renders native 1080p in handheld mode, adapts output resolution and high refresh rates dynamically across dock/undock transitions (with idle frame pacing), and recovers display, input, audio and network state across sleep/wake cycles.
+- **Isolated config and diagnostics**: Stores settings, login sessions, custom themes/fonts and `boot.log` in `/config/wiliwili-ns2/` without touching Switch 1's `/config/wiliwili/`, compiles out Google Analytics (`NO_GA`), and prints readable startup errors on a text console if initialization fails.
+
+### Install
+
+Download the release archive from [this fork's releases](https://github.com/thedavidweng/wiliwili-ns2/releases) and extract it to the root of the SD card (`/switch/wiliwili-ns2/wiliwili-NS2.nro`, or copy `wiliwili-NS2.nro` directly into `/switch/`), then launch it from kaiHEN's homebrew menu. Configuration and `boot.log` are written to `/config/wiliwili-ns2/`.
+
+### Building
+
+```sh
+git clone --recursive https://github.com/thedavidweng/wiliwili-ns2.git
+cd wiliwili-ns2
+
+scripts/switch2/build.sh image      # pinned devkitA64 + [ounce] SDK container
+scripts/switch2/build.sh configure  # cmake --preset switch2-release
+scripts/switch2/build.sh build      # build/switch2-release/wiliwili-NS2.nro (+ unstripped wiliwili-NS2.elf)
+scripts/switch2/build.sh audit      # NRO header, NACP, RomFS and linker map checks
+```
+
+For desktop development and host tests, run `cmake --preset desktop-release && cmake --build --preset desktop-release && ctest --preset desktop-release --output-on-failure`.
+
+The Switch 2 code lives in `platform/switch2/`, `cmake/Switch2Platform.cmake`, and `scripts/switch2/` (`library/borealis` stays at its pinned commit). [`docs/building.md`](docs/building.md) covers the build presets and SDK capability review in detail. Licensed under [GPL-3.0](LICENSE).
+
+以下为上游原始 README（未作修改）。 / Upstream's README follows, unchanged.
+
+---
+
 <p align="center">
     <img src="resources/svg/cn.xfangfang.wiliwili.svg" alt="logo" height="128" width="128"/>
 </p>
