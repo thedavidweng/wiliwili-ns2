@@ -1,0 +1,87 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "BRLS_UNITY_BUILD": "OFF"
+      }
+    },
+    {
+      "name": "desktop-debug",
+      "inherits": "base",
+      "displayName": "Desktop (Debug)",
+      "description": "Host build with symbols and no optimisation, for debugging the UI.",
+      "cacheVariables": {
+        "PLATFORM_DESKTOP": "ON",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "WILIWILI_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "desktop-release",
+      "inherits": "base",
+      "displayName": "Desktop (Release)",
+      "description": "Host build used for ctest and for day to day development.",
+      "cacheVariables": {
+        "PLATFORM_DESKTOP": "ON",
+        "CMAKE_BUILD_TYPE": "Release",
+        "WILIWILI_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "switch2-release",
+      "inherits": "base",
+      "displayName": "Switch 2 (Release)",
+      "description": "NS2 NRO with libounce and OunceVK (EGL/GLES through Zink), software decoding, no NSP forwarder and no deko3d.",
+      "toolchainFile": "$env{DEVKITPRO}/libounce/cmake/Switch2.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PLATFORM_SWITCH": "ON",
+        "PLATFORM_SWITCH2": "ON",
+        "BUILTIN_NSP": "OFF",
+        "USE_DEKO3D": "OFF",
+        "USE_SDL2": "ON",
+        "USE_EGL": "ON",
+        "USE_GLES2": "ON",
+        "USE_LIBROMFS": "ON",
+        "CMAKE_C_FLAGS_RELEASE": "-O2 -g -DNDEBUG",
+        "CMAKE_CXX_FLAGS_RELEASE": "-O2 -g -DNDEBUG"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "desktop-debug",
+      "configurePreset": "desktop-debug"
+    },
+    {
+      "name": "desktop-release",
+      "configurePreset": "desktop-release"
+    },
+    {
+      "name": "switch2-release",
+      "configurePreset": "switch2-release",
+      "targets": [
+        "wiliwili.nro"
+      ]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "desktop-release",
+      "configurePreset": "desktop-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

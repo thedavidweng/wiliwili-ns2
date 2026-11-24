@@ -1,0 +1,160 @@
+{
+  "schema": 1,
+  "description": "Resolved upstream and reference revisions, toolchain pins and container digests wiliwili-NS2 builds against. Every pin is exact; nothing floats.",
+  "upstream": {
+    "repository": "https://github.com/xfangfang/wiliwili",
+    "branch": "yoga",
+    "commit": "88e5876bea9502d06f46a8656e3530684d3aaf7d",
+    "version": "v1.6.0",
+    "license": "GPL-3.0"
+  },
+  "integrated_fork": {
+    "repository": "https://github.com/dragonflylee/wiliwili",
+    "branch": "dev",
+    "commit": "e5dd00d06f4b1ee3e38465a1e1cbd5223002faa6",
+    "integrated": [
+      {
+        "commit": "2f583df3edeca2c67d4e48da715cc473d75aa15a",
+        "subject": "Fix followed-UP list parsing in Dynamic (#710)",
+        "note": "Whole commit: DynamicUpResult::mid is a string and is converted where it is fired on the event bus."
+      },
+      {
+        "commit": "62e6ec18ffb065779b1b1d60c12b40f1e61b9805",
+        "subject": "fix(player): make progress slider pointer follow drag gesture",
+        "note": "Whole commit: the progress pointer keeps following the drag instead of snapping back."
+      },
+      {
+        "commit": "e5dd00d06f4b1ee3e38465a1e1cbd5223002faa6",
+        "subject": "refactor: reuse HTTP::createSession for image requests",
+        "note": "Whole commit: image requests share the HTTP session setup and its proxy/TLS handling."
+      },
+      {
+        "commit": "64538394481a74de0981d2d0a5d1730e477e00ee",
+        "subject": "chore(build): disable unity build and bump deps",
+        "note": "Shared parts only: cmake/FindMPV.cmake (drop the Homebrew mpv-wiliwili probe, dedupe the pkg-config library list) and the TRIMUI guards in activity_helper.hpp, setting_activity.cpp and config_helper.cpp. Its CI, Flatpak, macOS bundle, Switch 1 BUILTIN_NSP script, font and mbedtls curl backend changes are not taken."
+      }
+    ],
+    "skipped": [
+      {
+        "commit": "031ddf97d967614aa2086963ed9caff96b65e031",
+        "subject": "Apply remaining changes (#698)",
+        "reason": "Touches only .github/workflows/build.yaml."
+      },
+      {
+        "commit": "5dccf14651991f81581daed54796b8d03e4741e2",
+        "subject": "Migrate D3D11 video rendering to mpv's new D3D11 render API (#697)",
+        "reason": "Windows D3D11 render path only; this port uses EGL/GLES through OunceVK."
+      }
+    ]
+  },
+  "submodules": {
+    "library/MemoryModule": "7739ba4b2d87395446bbdcad6ae8bf9131b4250b",
+    "library/OpenCC": "ccae908834c2fe41ba02141fa5d0eef178a45080",
+    "library/QR-Code-generator": "720f62bddb7226106071d4728c292cb1df519ceb",
+    "library/borealis": "5f08b286f3df737f3321d2247a6fe633fcead03c",
+    "library/cpr": "ef35a614f1feb6ba0d4de13b1950bcaf7faad060",
+    "library/libpdr": "9dd3ab920940adac013a3cf40e3a5805d7e193e1",
+    "library/lunasvg": "f924651b85cac47dbe15f51a4aa320461fc1d07b",
+    "library/mongoose": "4328842400370f62d00b6a6b23f1cbe0cded4073",
+    "library/pystring": "7d16bc814ccb4cad03c300dcb77440034caa84f7"
+  },
+  "references": {
+    "borealis": {
+      "repository": "https://github.com/xfangfang/borealis",
+      "branch": "wiliwili",
+      "commit": "c5330379695fd6753cb1928f316b3ab26331db7a",
+      "note": "Upstream head of the UI framework branch. The gitlink stays 5f08b286 until the Switch 2 backends that need it land; ADR 0005 keeps borealis."
+    },
+    "openblops_nx": {
+      "repository": "https://github.com/HDErick/OpenBLOPS-NX",
+      "commit": "302b036471e8c8fea0918366218025418362dc81",
+      "license": "GPL-3.0",
+      "note": "Reference for PadPointer/Nmouse button arbitration only. No DXVK or Direct3D layer is imported."
+    },
+    "ounce_devkit": {
+      "repository": "https://github.com/ouncebrew/ounce-devkit",
+      "commit": "5e957599bd498643d82e5470aec80da67a12685d",
+      "license": "MIT",
+      "note": "The install.sh whose signing key fingerprint and pacman recipe scripts/switch2/Dockerfile reproduces."
+    },
+    "libounce": {
+      "repository": "https://github.com/ouncebrew/libounce",
+      "commit": "32e7ac414ee1cd98922f66a059be5a85e99feea5",
+      "license": "ISC",
+      "version": "20261117.1-1"
+    },
+    "ouncevk": {
+      "repository": "https://github.com/ouncebrew/ouncevk",
+      "commit": "6a03fdb1c8219dda8ff90ba7ab9301d28cdfe6c7",
+      "license": "MIT",
+      "version": "20261117.1-1"
+    },
+    "kaihen": {
+      "repository": "https://github.com/ouncebrew/kaihen",
+      "commit": "9aa371668e95e29c185bf6d31293aa13a0503a60",
+      "license": "GPL-2.0",
+      "version": "20261117.1-1"
+    },
+    "kaitube": {
+      "repository": "https://github.com/Sank-kab/KaiTube",
+      "commit": "7cd6e40bc9033103db9d7f9e5d88e899ce22912c",
+      "note": "Reference for redirecting Switch 1 devkitPro portlib paths to libounce and portlibs/switch2 on Switch 2."
+    },
+    "mpv": {
+      "repository": "https://github.com/mpv-player/mpv",
+      "commit": "35efcf53d59470b3941e61a50c8a3133035a093d",
+      "issue": "https://github.com/mpv-player/mpv/issues/18343",
+      "note": "mpv's public render.h still has no merged caller-owned Vulkan render API, so the port keeps MPVCore's OpenGL/EGL framebuffer path."
+    },
+    "nanovg_vulkan": {
+      "repository": "https://github.com/ollix/nanovg-vulkan",
+      "status": "not reachable (HTTP 404 on GitHub on 2026-11-23); no Vulkan nanovg backend is imported"
+    },
+    "hblist": {
+      "repository": "https://github.com/ouncebrew/hblist",
+      "commit": "ce1303fcc124b49058d502876d1fecf6ff8c9aa4",
+      "note": "Homebrew listing the NS2 NRO is added to by hand; the port does not depend on it."
+    }
+  },
+  "switch2_toolchain": {
+    "base_image": "docker.io/devkitpro/devkita64:20260219@sha256:1fc388c3a0d34bd2045a6dadcb1020e069d5f876a187fd705de14b4440c00282",
+    "image": "wiliwili-ns2-toolchain:local",
+    "compiler": "aarch64-none-elf-g++ (devkitA64) 15.2.0",
+    "newlib": "4.6.0.20260123",
+    "devkitA64": "r29.2-1",
+    "ounce_repository": "https://pkg.ouncebrew.org",
+    "ounce_signing_key_fingerprint": "DFEAE7FA965D1E6C0D41D4D75DB9FDBFA4A4DE29",
+    "ounce_packages": {
+      "libounce": "20261117.1-1",
+      "ouncevk": "20261117.1-1",
+      "libkaihen": "20261117.1-1"
+    },
+    "portlibs_source": "https://github.com/dragonflylee/mpv-build/releases/download/switch-portlibs",
+    "portlibs": {
+      "switch-dav1d": {
+        "version": "1.5.5-1",
+        "sha256": "9bb587c3eba9a8c4bf9a9d6964942c357ac5065028546b2637437d00d0f485de"
+      },
+      "switch-ffmpeg": {
+        "version": "7.1.5-5",
+        "sha256": "91a447f55c905c11a1ac5bf33efd20ac90dcc1653e4f58b6a63df2b88b4b6a5f"
+      },
+      "switch-libmpv": {
+        "version": "0.36.0-2",
+        "sha256": "1630cc44d3e98e09ee28717fb7b5a45b5ed0ae8d81c04457b5647d40a12e97e4"
+      }
+    },
+    "devkitpro_packages": {
+      "switch-tools": "1.13.1-1",
+      "switch-sdl2": "2.28.5-4",
+      "switch-curl": "7.69.1-5",
+      "switch-libass": "0.17.3-1",
+      "switch-libplacebo": "6.338.2-1"
+    },
+    "graphics": {
+      "backend": "OunceVK: Mesa NVK (Vulkan 1.4) and Zink (EGL, OpenGL, OpenGL ES 3.1) in $DEVKITPRO/portlibs/switch2",
+      "egl_pkgconfig_version": "26.2.2",
+      "notes": "OunceVK also installs empty libGLESv2.a, libglapi.a and libdrm_nouveau.a stubs in portlibs/switch2 so the Switch 1 copies in portlibs/switch can never be linked by mistake."
+    }
+  }
+}

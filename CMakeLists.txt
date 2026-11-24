@@ -4,12 +4,20 @@ set(BOREALIS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/library/borealis)
 set(BOREALIS_LIBRARY ${BOREALIS_DIR}/library)
 
 # Include Platform common options
-# wiliwili only support PLATFORM_DESKTOP and PLATFORM_SWITCH
-# example: cmake -B build -DPLATFORM_DESKTOP=ON
+# Platforms: PLATFORM_DESKTOP, PLATFORM_SWITCH (Switch 1), PLATFORM_SWITCH2
+# (Switch 2 on the [ounce] devkit, see cmake/Switch2Platform.cmake)
+# Use CMakePresets.json: cmake --preset desktop-release / switch2-release
 include(${BOREALIS_LIBRARY}/cmake/commonOption.cmake)
 
 # NintendoSwitch
 cmake_dependent_option(BUILTIN_NSP "Built in NSP forwarder" OFF "PLATFORM_SWITCH" OFF)
+
+# NintendoSwitch 2: PLATFORM_SWITCH with the [ounce] libounce devkit and
+# OunceVK in place of libnx and the Switch 1 GPU libraries.
+option(PLATFORM_SWITCH2 "build for Switch 2 using the [ounce] devkit" OFF)
+
+# Host checks for the pinned upstream revisions and the Switch 2 configuration.
+option(WILIWILI_BUILD_TESTS "build the host configuration tests" OFF)
 
 # macOS
 # These four options are only for macOS app bundling usage.
@@ -72,6 +80,8 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/extra.cmake)
 
 # toolchain
 include(${BOREALIS_LIBRARY}/cmake/toolchain.cmake)
+# Switch 2: re-apply the libounce platform over Borealis' Switch 1 branch
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Switch2Platform.cmake)
 
 # Git Info
 git_info(GIT_TAG_VERSION GIT_TAG_SHORT)
@@ -327,3 +337,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE wiliwili/include wiliwili/inc
 target_compile_options(${PROJECT_NAME} PRIVATE -ffunction-sections -fdata-sections -Wunused-variable ${APP_PLATFORM_OPTION})
 target_link_libraries(${PROJECT_NAME} PRIVATE wiliwiliLibExtra borealis lunasvg pystring pdr mongoose z ${APP_PLATFORM_LIB})
 target_link_options(${PROJECT_NAME} PRIVATE ${APP_PLATFORM_LINK_OPTION})
+
+if (WILIWILI_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif ()
