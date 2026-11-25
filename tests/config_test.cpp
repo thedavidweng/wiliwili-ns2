@@ -339,6 +339,14 @@ void check_switch2_wiring() {
     const std::string live_core_cpp = read("wiliwili/source/view/live_core.cpp");
     CHECK(live_core_cpp.find("motionClock.step(") != std::string::npos);
     CHECK(live_core_cpp.find("wiliwili::drawSubpixelText") != std::string::npos);
+
+    // Switch 2 defaults in-memory cache to 20MB (index 2) and labels HEVC as SW-only.
+    const std::string config_cpp = read("wiliwili/source/utils/config_helper.cpp");
+    CHECK(config_cpp.find("#elif defined(__SWITCH2__)") != std::string::npos);
+    const std::string setting_cpp = read("wiliwili/source/activity/setting_activity.cpp");
+    CHECK(setting_cpp.find("codec_ns2_sw_only") != std::string::npos);
+    const std::string zh_hans = read("resources/i18n/zh-Hans/wiliwili.json");
+    CHECK(zh_hans.find("codec_ns2_sw_only") != std::string::npos);
 }
 
 }  // namespace
