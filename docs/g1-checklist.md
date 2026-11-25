@@ -58,7 +58,8 @@ One line per stage. The ones G1 reads:
 | Line | Pass looks like | If it does not |
 |---|---|---|
 | `[boot]`, `[socket]`, `[romfs]`, `[pl]`, `[setsys]`, `[set]`, `[psm]`, `[nifm]`, `[lbl]` | `ok` | the stage that says `failed: 0x...` is the cause; a boot that cannot start prints the reason on a text console |
-| `[gpu] gpu api: OpenGL ES (Zink)` | `GL_RENDERER` names Zink, `[gpu] vkDeviceName` names NVK on the Switch 2 GPU | still on a screen means Zink is not the driver; note the strings verbatim |
+| `[gpu] gpu api: OpenGL ES (Zink)` | `GL_RENDERER` names Zink, `GL_VERSION` says `OpenGL ES 3.1` or newer, `[gpu] vkDeviceName` names NVK on the Switch 2 GPU | still on a screen means Zink is not the driver; note the strings verbatim |
+| `[gpu] gpu api: EGL (OunceVK)` | `EGL_CONTEXT_CLIENT_VERSION: 3`, `EGL_RENDERABLE_TYPE` includes the ES3 bit `0x40` (decimal values such as `64` or `77`), `GL_MAJOR_MINOR_VERSION: 3.1` or newer, `EGL_DEPTH_STENCIL_SIZE` ends in `/8` | an `[sdl] SDL_GL_CreateContext failed: ...` line instead means no ES 3.1 context; copy it verbatim for `#23` |
 | `[display] render WxH, refresh N Hz, output WxH handheld\|docked` | handheld shows `output 1920x1080 handheld`; the render size is at most 1920x1080 | a `render` of 0 or a missing line means the display query failed; note it, the UI still runs |
 | `[display] vi2 ...` | either the mode list and the 120 Hz capability result, or `vi2 unavailable (0x...)` | both are non-fatal. Note which one and whether the UI still updates |
 | `[probe] boot: audio N outputs, socket connected, dns configured` | exactly that | `audio init failed` / `socket not connected` / `dns unresolved` name the failing half |
@@ -90,6 +91,8 @@ Mark every row. Detail follows the table.
 | 12 | >=3 sleep/wake transitions recover display, input, network, audio | | `boot.log`, video |
 | 13 | HTTPS/DNS/TLS succeed, pre-playback probe says healthy | | `boot.log`, Network Diagnostics |
 | 14 | >=5 launch and clean-exit cycles, no leak or hang | | `boot.log` per cycle |
+| 15 | GLES3 context and NanoVG rendering correct (`#23`) | | `boot.log` `[gpu]` lines, screenshots |
+| 16 | GLES3 vs GLES2 comparison build on identical workloads (`#23`) | | frame times, memory, screenshots per build |
 
 ### 4.1 Boot, GPU and display (1, 2, 3)
 
@@ -178,6 +181,38 @@ dialog. Copy `boot.log` after the fifth cycle: it must show five complete
 `userAppInit` / `main` / `main loop finished` / `userAppExit` sequences, and the
 fifth launch must behave like the first (no slower animation, no missing image,
 no missing audio).
+
+### 4.7 OpenGL ES 3.1 rendering (15, 16)
+
+The production NRO renders with OpenGL ES 3 (ADR 0005). This section gives
+`#23` the evidence it needs to keep GLES3 as the only configuration.
+
+1. Copy the `[gpu] gpu api: OpenGL ES (Zink)` and `[gpu] gpu api: EGL (OunceVK)`
+   blocks, both extension lists included, into the report as they are.
+2. Check the rendering in handheld and docked mode, with a screenshot of each:
+   - rounded cards, focus highlights and their anti-aliased edges
+   - Latin and CJK text, including a long title in a feed
+   - thumbnails in a fast-scrolled feed
+   - translucent dialogs and the dimmed background behind them
+   - clipping: nothing draws outside a scrolled list or a tab frame
+   - a clean full-screen redraw after each dock and undock
+
+   The app log must show no `nanovg` GL error and no shader error.
+3. Build the comparison NRO (`docs/building.md`, "The GLES2 comparison build").
+   Run each NRO through the same workloads in the same output mode:
+   - 10 s idle on the home feed
+   - one fast scroll through a thumbnail feed
+   - open and close a video detail page three times
+   - 5 launch/exit cycles
+   - 3 sleep/wake cycles
+
+   For each build, record the frame-time capture (or p50/p95/p99 once `#9` has
+   it), memory if the console shows it, any visual difference and any lifecycle
+   failure. The two `GL_VERSION` lines can be identical: Mesa may grant ES 3.x to
+   a 2.0 request. Record what each build reports. Do not assume a difference.
+
+MPVCore video composition on GLES3 cannot be checked before playback works. It
+is part of `#7` and is reported back on `#23`.
 
 ## 5. Reporting
 

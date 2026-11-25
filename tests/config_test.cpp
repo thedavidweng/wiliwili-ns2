@@ -95,7 +95,7 @@ void check_upstream_pins() {
     for (auto entry = submodules.begin(); entry != submodules.end(); ++entry) {
         check(is_hex(entry.value(), 40), entry.key().c_str(), __LINE__);
     }
-    CHECK(submodules.value("library/borealis", std::string()) == "5f08b286f3df737f3321d2247a6fe633fcead03c");
+    CHECK(submodules.value("library/borealis", std::string()) == "dd652691eb67c1f44cfca2dc1017e6a364f73c38");
 
     // Each of the six dragonfly/dev commits is either integrated or skipped,
     // and the two sets do not overlap.
@@ -148,6 +148,21 @@ void check_upstream_pins() {
         CHECK(dockerfile.find(entry.key()) != std::string::npos);
         CHECK(dockerfile.find(at(entry.value(), "sha256").get<std::string>()) != std::string::npos);
     }
+}
+
+// Integer IDs must survive parsing and serialization without a float roundtrip.
+// The unsigned get_ptr check follows nlohmann/json's upstream regression #4525.
+void check_json_numbers() {
+    const json value =
+        json::parse(R"({"mid":9007199254740993,"max":18446744073709551615,"code":-101,"title":"中文 日本語 한국어"})");
+    CHECK(value["mid"].is_number_unsigned());
+    CHECK(value["mid"].get<uint64_t>() == 9007199254740993ULL);
+    CHECK(value["max"].get<uint64_t>() == UINT64_MAX);
+    CHECK(value["code"].get<int>() == -101);
+    CHECK(value["mid"].get_ptr<const json::number_unsigned_t*>() != nullptr);
+    CHECK(value["mid"].get_ptr<const json::number_integer_t*>() == nullptr);
+    CHECK(json::parse(value.dump()) == value);
+    CHECK(value["title"] == "中文 日本語 한국어");
 }
 
 json find_named(const json& list, const std::string& name) {
@@ -212,6 +227,11 @@ void check_presets() {
         // SDL2 + EGL on top of OunceVK.
         CHECK(at(switch2, cache + "USE_SDL2") == "ON");
         CHECK(at(switch2, cache + "USE_EGL") == "ON");
+        // One canonical renderer: OpenGL ES 3 through Zink. Borealis'
+        // toolchain lets USE_GLES2 win over USE_GLES3, so the preset turns it
+        // off explicitly and a GLES2 value left in an old cache cannot win.
+        CHECK(at(switch2, cache + "USE_GLES3") == "ON");
+        CHECK(at(switch2, cache + "USE_GLES2") == "OFF");
         // The RomFS comes from the NRO's own --romfsdir section: libromfs would
         // embed every asset a second time as a C++ array, which also turns
         // OpenCC off and does not fit in the 2 GB build container.
@@ -274,15 +294,20 @@ void check_switch2_wiring() {
     CHECK(platform.find("LIBROMFS_PREBUILT_GENERATOR") == std::string::npos);
 
     // The Switch 2 SDL backend is kept in this repository and replaces the one
-    // in the pinned Borealis submodule.
+    // in the pinned Borealis submodule, using GLES3 UBOs and a CJK-sized font
+    // atlas so danmaku rendering does not thrash Zink state or reset mid-video.
+    const std::string sdl_video = read("platform/switch2/sdl_video.cpp");
+    CHECK(sdl_video.find("NANOVG_GL_USE_UNIFORMBUFFER") != std::string::npos);
     const std::string library = read("library/CMakeLists.txt");
     CHECK(library.find("platform/switch2/sdl_video.cpp") != std::string::npos);
     CHECK(library.find("HEADER_FILE_ONLY TRUE") != std::string::npos);
+    CHECK(library.find("NVG_INIT_FONTIMAGE_SIZE=2048") != std::string::npos);
 }
 
 }  // namespace
 
 int main() {
+    check_json_numbers();
     check_upstream_pins();
     check_presets();
     check_switch2_wiring();

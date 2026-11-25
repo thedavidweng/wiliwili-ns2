@@ -126,6 +126,11 @@ if (PLATFORM_SWITCH2)
     set(WILIWILI_SWITCH2_SDL_VIDEO ${PROJECT_SOURCE_DIR}/platform/switch2/sdl_video.cpp)
     target_sources(borealis PRIVATE ${WILIWILI_SWITCH2_SDL_VIDEO})
     set_source_files_properties(${WILIWILI_SWITCH2_SDL_VIDEO} PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+    # Size Fontstash's initial atlas for 1080p CJK stroke+fill danmaku so playback
+    # does not stall across four consecutive mid-stream atlas resets (512 -> 2048).
+    set_property(SOURCE ${BOREALIS_LIBRARY}/lib/extern/nanovg/nanovg.c
+            DIRECTORY ${BOREALIS_LIBRARY}
+            APPEND PROPERTY COMPILE_DEFINITIONS NVG_INIT_FONTIMAGE_SIZE=2048)
     # The backend reports the driver capabilities through the boot log, and it
     # needs <SDL2/SDL.h>: platform/switch2/compat carries that one include.
     target_include_directories(borealis PRIVATE

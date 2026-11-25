@@ -170,6 +170,15 @@ void check_gpu_report_sources() {
     CHECK(video.find("wili::formatExtensionList") != std::string::npos);
     CHECK(video.find("vkGetPhysicalDeviceProperties") != std::string::npos);
 
+    // The context that was created, not the one that was asked for: GLES 3.1
+    // is requested, and EGL, SDL and GL each report what they actually got.
+    CHECK(video.find("SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3)") != std::string::npos);
+    CHECK(video.find("SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1)") != std::string::npos);
+    CHECK(video.find("nvgCreateGLES3") != std::string::npos);
+    CHECK(video.find("eglQueryContext") != std::string::npos);
+    CHECK(video.find("EGL_EXTENSIONS") != std::string::npos);
+    CHECK(video.find("GL_MAJOR_VERSION") != std::string::npos);
+
     // And they are written to boot.log, one note per line, like the rest.
     CHECK(video.find("wiliwili_boot_note") != std::string::npos);
 }

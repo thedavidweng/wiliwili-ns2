@@ -51,7 +51,7 @@
     "library/MemoryModule": "7739ba4b2d87395446bbdcad6ae8bf9131b4250b",
     "library/OpenCC": "ccae908834c2fe41ba02141fa5d0eef178a45080",
     "library/QR-Code-generator": "720f62bddb7226106071d4728c292cb1df519ceb",
-    "library/borealis": "5f08b286f3df737f3321d2247a6fe633fcead03c",
+    "library/borealis": "dd652691eb67c1f44cfca2dc1017e6a364f73c38",
     "library/cpr": "ef35a614f1feb6ba0d4de13b1950bcaf7faad060",
     "library/libpdr": "9dd3ab920940adac013a3cf40e3a5805d7e193e1",
     "library/lunasvg": "f924651b85cac47dbe15f51a4aa320461fc1d07b",
@@ -63,7 +63,7 @@
       "repository": "https://github.com/xfangfang/borealis",
       "branch": "wiliwili",
       "commit": "c5330379695fd6753cb1928f316b3ab26331db7a",
-      "note": "Upstream head of the UI framework branch. The gitlink stays 5f08b286 until the Switch 2 backends that need it land; ADR 0005 keeps borealis."
+      "note": "Reference snapshot of the UI framework branch. The gitlink is pinned separately to dd652691 for upstream's nlohmann/json 3.12.0 upgrade and i18n literal syntax fix; the Switch 2 backends remain outside the submodule (ADR 0005)."
     },
     "openblops_nx": {
       "repository": "https://github.com/HDErick/OpenBLOPS-NX",

@@ -19,6 +19,20 @@ cmake --build --preset desktop-debug
 ```
 
 Both host presets set `BRLS_UNITY_BUILD=OFF` and `WILIWILI_BUILD_TESTS=ON`.
+The Borealis gitlink is pinned to upstream commit
+`dd652691eb67c1f44cfca2dc1017e6a364f73c38`, which upgrades nlohmann/json
+from 3.11.2 to 3.12.0 and fixes deprecated i18n literal syntax. This takes
+upstream's integer parsing and unsigned pointer-access fixes without local
+changes to the JSON header. The configuration test covers exact 64-bit integer
+IDs, unsigned pointer access, and CJK serialization.
+
+The Switch curl package remains at 7.69.1-5 for now: the available
+`dragonflylee/mpv-build` 8.14.1-2 package replaces the native libnx TLS backend
+with mbedTLS. Adopting it requires a CA trust-store integration and on-console
+certificate validation tests, not just a library replacement. FFmpeg 7.1.5,
+dav1d 1.5.5 and mpv 0.36.0 already match that source's available media packages;
+new desktop releases are not substitutes for the Horizon-patched portlibs.
+
 Verified on macOS 27.2.1 (arm64) with CMake 4.5.1, Ninja 1.13.2, Homebrew
 mpv 0.42.0 and webp 1.6.0: configure, build and `ctest` pass. The `.app` bundle
 target (`cmake --build --preset desktop-release --target wiliwili.app`) is
@@ -67,7 +81,7 @@ failing).
 |---|---|---|
 | `PLATFORM_SWITCH` / `PLATFORM_SWITCH2` | `ON` | Borealis' Switch backend plus the libounce portlibs and GPU libraries |
 | `USE_SDL2`, `USE_EGL` | `ON` | SDL2 window/input on an EGL surface from OunceVK |
-| `USE_GLES2` | `ON` | Zink exposes GLES 3.1, but the GLES2 path is the one Borealis and MPVCore exercise today; GLES3 is deferred until device gate G1 |
+| `USE_GLES3` / `USE_GLES2` | `ON` / `OFF` | OpenGL ES 3 is the one rendering configuration (ADR 0005): an ES 3.1 context from Zink, NanoVG's GLES3 backend and MPVCore's `#version 300 es` shaders. `USE_GLES2` is set to `OFF` explicitly because Borealis' `toolchain.cmake` lets it win over `USE_GLES3`, so a stale cache cannot bring GLES2 back |
 | `USE_LIBROMFS` | `OFF` | the resources go into the NRO's own `--romfsdir` section, mounted by `romfsInit()` as `romfs:/`. Embedding them as a C++ array would duplicate every asset, turn OpenCC off, and OOM `cc1plus` in a 2 GB container |
 | `BUILTIN_NSP`, `USE_DEKO3D` | `OFF` | no Switch 1 NSP forwarder and no deko3d |
 | `CMAKE_C_FLAGS_RELEASE`, `CMAKE_CXX_FLAGS_RELEASE` | `-O2 -g -DNDEBUG` | `-O2` matches libounce's `switch2vars.sh`; `-g` keeps `wiliwili.elf` usable as a symbol source next to the stripped NRO |
@@ -88,6 +102,21 @@ devkit: it points `NX_ROOT` at `$DEVKITPRO/libounce`, puts
 portlibs, forces `ANALYTICS` off with `-DNO_GA` so the port compiles without the
 Google Analytics endpoint and key, and adds the link map the audit reads.
 
+### The GLES2 comparison build
+
+`#23` compares GLES3 with the old GLES 2.0 context on identical workloads. The
+comparison NRO comes from a separate build directory, so the production one is
+never overwritten:
+
+```sh
+scripts/switch2/build.sh cmake --preset switch2-release -B build/switch2-gles2 -DUSE_GLES2=ON
+scripts/switch2/build.sh cmake --build build/switch2-gles2 --target wiliwili-NS2.nro -j 1
+```
+
+This is not a second production configuration: `#23` ends by deleting the
+`USE_GLES2` branches in `platform/switch2/sdl_video.cpp`, or by switching the
+preset back to GLES2 alone if the device shows a GLES3 blocker.
+
 ### What the Switch 2 sources replace and add
 
 Borealis' Switch 1 backend assumes hardware this console does not have, and the
@@ -100,7 +129,7 @@ replacements.
 
 | File | Why |
 |---|---|
-| `platform/switch2/sdl_video.cpp` | Borealis' SDL backend asks for a desktop OpenGL 4.3 core context on any `__SWITCH__` build. Here the `#ifdef __SWITCH__` block is Switch 1 only, so Switch 2 gets the GLES2 context OunceVK provides, the window is created at the console's own handheld resolution, every failing SDL/GL call is reported, and the GL strings, the GLES extension list and the NVK Vulkan device with its instance and device extension lists are written to `boot.log`. `library/CMakeLists.txt` sets the submodule's file to `HEADER_FILE_ONLY` and compiles this one instead |
+| `platform/switch2/sdl_video.cpp` | Borealis' SDL backend asks for a desktop OpenGL 4.3 core context on any `__SWITCH__` build. Here the `#ifdef __SWITCH__` block is Switch 1 only, so Switch 2 asks for an OpenGL ES 3.1 context (SDL then picks an `EGL_OPENGL_ES3_BIT` config) and draws with `nvgCreateGLES3`, the window is created at the console's own handheld resolution, every failing SDL/GL call is reported, and the GL strings and limits, the context that was actually created (EGL context and config attributes, SDL's context attributes, `GL_MAJOR_VERSION`/`GL_MINOR_VERSION`), the GLES and EGL extension lists and the NVK Vulkan device with its instance and device extension lists are written to `boot.log`. `library/CMakeLists.txt` sets the submodule's file to `HEADER_FILE_ONLY` and compiles this one instead |
 | `platform/switch2/switch2_wrapper.c` | `userAppInit`: same services as the Switch 1 wrapper, each stage recorded in `boot.log`; a boot that cannot start now reports on a text console instead of going black |
 | `platform/switch2/borealis/switch_platform.cpp` | Borealis' Switch platform only handles focus and exit, gates `AppletHookType_OnOperationMode` behind `BOREALIS_USE_DEKO3D` (dead code on this build) and never pumps `SDL_PollEvent`, so the queue used to grow for the whole session and a dock or a resume was invisible to the UI. The replacement handles every applet hook, pumps SDL, follows the display on dock/undock, paces frames from the panel refresh and releases the platform in a fixed teardown order |
 | `platform/switch2/borealis/switch_input.cpp` | Borealis' Switch input manager knows nothing about the Joy-Con 2 optical mouse, maps touch through the pointer's framebuffer scale, applies the `L|ZL` / `R|ZR` claim to every pad in the frame and never draws a hover frame. The replacement drives `PadPointer` beside the standard mouse, keeps one logical cursor, latches the claim once per frame from the pointer pad only, frames the control under the cursor, and maps touch through the digitizer's own domain |
@@ -236,7 +265,7 @@ not from documentation. `aarch64-none-elf-g++ (devkitA64) 15.2.0`, newlib
 |---|---|---|
 | Joy-Con 2 mouse / pointer | `switch/runtime/pad.h`: `PadPointer` (`active`, `side`, `x`, `y`, `delta_x`, `delta_y`, `wheel_delta_y`; there is no `engaged` field), `PadPointerSide_Left/Right`, `padPointerInitialize(PadPointer*, int width, int height)`, `padPointerUpdate(pad)` per frame, `padPointerGetButtons(PadPointer*)` returning `HidMouseButton` bits (not `HidNpadButton_*`); `switch2/services/nmouse.h`: `HidNmouseState`, `HidNmouseStateWithDelta`, `hidInitializeNmouse(buffer, size, width, height, pointer_type)`, `hidGetNmouseHandles`, `hidGetNmouseStates`, `HidNmouseButtonConfigJoyLeftJcms/JoyRightJcms/StandardMouse` | Feeds Borealis' mouse abstraction (pointer, drag, scroll) for gate G1. Both the Joy-Con 2 pointer and a standard USB mouse are covered |
 | Display and refresh | `switch2/services/vi2.h` (`vi2QueryDisplayRefreshRate`, `vi2QueryDisplayModeCapability`, `vi2SetDisplay120HzCapability`), `appletGetDefaultDisplayResolution` + its change event, `appletGetOperationMode`, `switch2/services/gsv.h`, `switch/display/{native_window,framebuffer,buffer_producer,binder,parcel}.h` | SDL2 window on an EGL surface; dock/undock and refresh reporting are wired in `platform/switch2/switch2_display.cpp`. `vi2SetDisplay120HzCapability` only declares the capability to VI2; the read-back rate drives the diagnostics and the idle pacing, and 120 Hz presentation through OunceVK/Zink is a gate G1 item on the console, see `docs/g1-checklist.md` |
-| GPU / graphics | OunceVK `portlibs/switch2/lib/libEGL.a` (EGL, OpenGL, GLES 3.1 through Zink), `libvulkan.a` (Mesa NVK, Vulkan 1.4), empty `libGLESv2.a`/`libglapi.a`/`libdrm_nouveau.a` stubs; pkg-config `egl`, `glesv2`, `gl`, `vulkan`, `libdrm_nouveau` version `26.2.2` | The existing MPVCore framebuffer GL path and Borealis' nanovg GL driver, unchanged |
+| GPU / graphics | OunceVK `portlibs/switch2/lib/libEGL.a` (EGL, OpenGL, GLES 3.1 through Zink), `libvulkan.a` (Mesa NVK, Vulkan 1.4), empty `libGLESv2.a`/`libglapi.a`/`libdrm_nouveau.a` stubs; pkg-config `egl`, `glesv2`, `gl`, `vulkan`, `libdrm_nouveau` version `26.2.2` | The existing MPVCore framebuffer path and Borealis' NanoVG GLES3 backend on an ES 3.1 context, unchanged upstream code |
 | Hardware video decode | `switch2/services/viddec.h`: `ViddecCodec`, `ViddecOutputFormat`, `ViddecTilingMode`, `viddecOpenDecoder`, `viddecDecoder{Initialize,Start,Stop,Flush,Submit,AcquireImage,GetOutputProperties,ReleaseImage}`, NV12 image pools (`viddecImagePoolCreate`, `viddecImagePoolReadNv12`, `viddecCopyImageNv12`) with `GsvNativeSync` producer/consumer fences | Deferred: software decoding is the baseline (ADR 0001). The zero-copy or bounded-copy path is the post-G2 hardware track, decided at G3 |
 | Audio | `switch/audio/audio.h`, `switch/audio/driver.h` | SDL2 audio output through the libnx-compatible driver; no change needed for the software baseline |
 | Lifecycle and applets | `switch/services/applet.h`, `switch/applets/swkbd.h` (`swkbdCreate`, `swkbdConfig`, `SwkbdType_All`), `switch2/services/audu.h` | Applet and lifecycle hooks feed the Borealis Switch platform; the system keyboard covers Chinese input, with an in-app Pinyin fallback when it cannot start |
@@ -250,5 +279,5 @@ Deferred with a reason:
 - mpv Vulkan render API: mpv's public `render.h` still has no caller-owned
   Vulkan render path (`mpv#18343` is open), so MPVCore keeps EGL/GLES.
 - `VideoDecoder` zero-copy GPU import: needs the G2 benchmark first (G3).
-- GLES3 contexts: available through Zink, but only worth switching once a device
-  run shows a benefit.
+- GLES3-only optimizations (PBO texture uploads, buffer reuse, sync objects,
+  fewer draw calls): only where a device profile shows the cost (`#23`).
