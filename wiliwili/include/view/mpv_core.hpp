@@ -417,10 +417,14 @@ private:
     int sw_size[2]                 = {1920, 1080};
     size_t pitch                   = PIXCEL_SIZE * sw_size[0];
     void *pixels                   = nullptr;
+    int block_for_target_time{0};
     bool redraw                    = false;
-    mpv_render_param mpv_params[5] = {
-        {MPV_RENDER_PARAM_SW_SIZE, &sw_size[0]}, {MPV_RENDER_PARAM_SW_FORMAT, (void *)sw_format},
-        {MPV_RENDER_PARAM_SW_STRIDE, &pitch},    {MPV_RENDER_PARAM_SW_POINTER, pixels},
+    mpv_render_param mpv_params[6] = {
+        {MPV_RENDER_PARAM_SW_SIZE, &sw_size[0]},
+        {MPV_RENDER_PARAM_SW_FORMAT, (void *)sw_format},
+        {MPV_RENDER_PARAM_SW_STRIDE, &pitch},
+        {MPV_RENDER_PARAM_SW_POINTER, pixels},
+        {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block_for_target_time},
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
 #elif defined(BOREALIS_USE_DEKO3D)
@@ -434,7 +438,9 @@ private:
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
 #elif defined(BOREALIS_USE_D3D11)
-    mpv_render_param mpv_params[1] = {
+    int block_for_target_time{0};
+    mpv_render_param mpv_params[2] = {
+        {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block_for_target_time},
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
 #elif defined(BOREALIS_USE_GXM)
@@ -458,9 +464,11 @@ private:
     GLint default_framebuffer = 0;
     mpv_opengl_fbo mpv_fbo{0, 1920, 1080};
     int flip_y{1};
-    mpv_render_param mpv_params[3] = {
+    int block_for_target_time{0};
+    mpv_render_param mpv_params[4] = {
         {MPV_RENDER_PARAM_OPENGL_FBO, &mpv_fbo},
         {MPV_RENDER_PARAM_FLIP_Y, &flip_y},
+        {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block_for_target_time},
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
 #else
@@ -470,10 +478,12 @@ private:
     GLShader shader{0};
     mpv_opengl_fbo mpv_fbo{0, 1920, 1080};
     int flip_y{1};
+    int block_for_target_time{0};
     bool redraw                    = false;
-    mpv_render_param mpv_params[3] = {
+    mpv_render_param mpv_params[4] = {
         {MPV_RENDER_PARAM_OPENGL_FBO, &mpv_fbo},
         {MPV_RENDER_PARAM_FLIP_Y, &flip_y},
+        {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block_for_target_time},
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
     float vertices[20] = {1.0f,  1.0f,  0.0f, 1.0f, 1.0f, 1.0f,  -1.0f, 0.0f, 1.0f, 0.0f,

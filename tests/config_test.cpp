@@ -303,6 +303,22 @@ void check_switch2_wiring() {
     // vd-lavc-dr=no, fixed 4 threads) must not run on Switch 2's OunceVK Zink.
     const std::string mpv_core = read("wiliwili/source/view/mpv_core.cpp");
     CHECK(mpv_core.find("#if defined(__SWITCH__) && !defined(__SWITCH2__)") != std::string::npos);
+    // MPVCore::on_update is registered inside MPVCore::MPVCore() while C++17
+    // static-singleton initialization (__cxa_guard_acquire) is held on the main
+    // thread; calling MPVCore::instance() before brls::sync deadlocks on console.
+    const auto onUpdatePos = mpv_core.find("void MPVCore::on_update");
+    const auto syncPos     = mpv_core.find("brls::sync(", onUpdatePos);
+    CHECK(onUpdatePos != std::string::npos && syncPos != std::string::npos);
+    const std::string beforeSync = mpv_core.substr(onUpdatePos, syncPos - onUpdatePos);
+    CHECK(beforeSync.find("MPVCore::instance()") == std::string::npos);
+
+    // MPVCore::on_update renders into an offscreen FBO on Borealis' main UI
+    // thread: MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME must be 0 so libmpv 0.36
+    // never sleeps inside pthread_cond_wait for up to two video frames (66.7 ms
+    // at 30 fps) and stalls 60/120 Hz danmaku pacing.
+    const std::string mpv_core_hpp = read("wiliwili/include/view/mpv_core.hpp");
+    CHECK(mpv_core_hpp.find("int block_for_target_time{0};") != std::string::npos);
+    CHECK(mpv_core_hpp.find("{MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &block_for_target_time}") != std::string::npos);
 
     // The Switch 2 SDL backend is kept in this repository and replaces the one
     // in the pinned Borealis submodule, using GLES3 UBOs and a CJK-sized font
@@ -313,6 +329,15 @@ void check_switch2_wiring() {
     CHECK(library.find("platform/switch2/sdl_video.cpp") != std::string::npos);
     CHECK(library.find("HEADER_FILE_ONLY TRUE") != std::string::npos);
     CHECK(library.find("NVG_INIT_FONTIMAGE_SIZE=2048") != std::string::npos);
+
+    // Danmaku scrolling uses VSync-paced DanmakuMotionClock and subpixel state->xform
+    // translation rather than raw CPU wall-clock and Fontstash floorf quantization.
+    const std::string danmaku_core_cpp = read("wiliwili/source/view/danmaku_core.cpp");
+    CHECK(danmaku_core_cpp.find("motionClock.step(") != std::string::npos);
+    CHECK(danmaku_core_cpp.find("wiliwili::snapVerticalPixel") != std::string::npos);
+    const std::string live_core_cpp = read("wiliwili/source/view/live_core.cpp");
+    CHECK(live_core_cpp.find("motionClock.step(") != std::string::npos);
+    CHECK(live_core_cpp.find("wiliwili::drawSubpixelText") != std::string::npos);
 }
 
 }  // namespace

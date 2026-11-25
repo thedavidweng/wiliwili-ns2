@@ -131,6 +131,17 @@ else
     fail "$map does not wrap cpu_features_get_time_usec"
 fi
 
+objdump="${readelf%readelf}objdump"
+nm_bin="${readelf%readelf}nm"
+if [ -x "$objdump" ] && [ -x "$nm_bin" ]; then
+    mpv_ctor="$("$nm_bin" "$elf" | awk '/ _ZN7MPVCoreC1Ev$/{print $1; exit}')"
+    if [ -n "$mpv_ctor" ] && "$objdump" -d --start-address="0x$mpv_ctor" --stop-address="$((0x$mpv_ctor + 0x180))" "$elf" | grep -Eq 'mov[[:space:]]+w[0-9]+, #0xc([[:space:]]|$)'; then
+        ok "MPVCore disables MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME (#0xc) in ELF"
+    else
+        fail "MPVCore::MPVCore() does not set MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME (#0xc)"
+    fi
+fi
+
 if grep -q '/opt/devkitpro/libnx/' "$map"; then
     fail "$map links Switch 1 libnx archives:"
     grep -o '/opt/devkitpro/libnx/[^ ]*' "$map" | sort -u | sed 's/^/      /'

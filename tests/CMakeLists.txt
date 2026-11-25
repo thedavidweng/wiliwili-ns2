@@ -67,3 +67,19 @@ target_include_directories(wiliwili_switch2_lifecycle_test PRIVATE
 target_compile_definitions(wiliwili_switch2_lifecycle_test PRIVATE
         WILIWILI_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 add_test(NAME switch2_lifecycle COMMAND wiliwili_switch2_lifecycle_test)
+
+# Danmaku smoothness: headless NanoVG + Fontstash subpixel quad verification and
+# VSync frame-clock pacing under multi-buffer FIFO swapchain bursts.
+add_executable(wiliwili_danmaku_test
+        danmaku_motion_test.cpp
+        ${BOREALIS_LIBRARY}/lib/extern/nanovg/nanovg.c)
+set_target_properties(wiliwili_danmaku_test PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON)
+target_include_directories(wiliwili_danmaku_test PRIVATE
+        ${PROJECT_SOURCE_DIR}/wiliwili/include
+        ${BOREALIS_LIBRARY}/include
+        ${BOREALIS_LIBRARY}/include/borealis/extern/nanovg)
+target_compile_definitions(wiliwili_danmaku_test PRIVATE
+        WILIWILI_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+add_test(NAME danmaku_motion COMMAND wiliwili_danmaku_test)
