@@ -52,6 +52,8 @@ std::string APPVersion::getPlatform() {
 #else
     return "Windows-x86";
 #endif
+#elif defined(__SWITCH2__)
+    return "NS2";
 #elif defined(__SWITCH__)
 #ifdef BOREALIS_USE_DEKO3D
     return "NX-deko3d";

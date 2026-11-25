@@ -324,7 +324,7 @@ elseif (PLATFORM_SWITCH)
         # wiliwili-NS2.nro, with the unstripped wiliwili-NS2.elf next to it.
         set(APP_ARTIFACT_NAME wiliwili-NS2)
         set(APP_TITLE wiliwili-NS2)
-        set(APP_AUTHOR "xfangfang and wiliwili-NS2 contributors")
+        set(APP_AUTHOR "thedavidweng (NS2), xfangfang and contributors")
     else ()
         set(APP_ARTIFACT_NAME ${PROJECT_NAME})
         set(APP_TITLE ${PROJECT_NAME})
@@ -371,6 +371,7 @@ elseif (PLATFORM_SWITCH)
         ${ROMFS_STAGING}
         COMMAND ${NX_ELF2NRO_EXE} ${APP_ARTIFACT_NAME}.elf ${APP_ARTIFACT_NAME}.nro --icon=${PROJECT_ICON}
             --nacp=${APP_ARTIFACT_NAME}.nacp --romfsdir=${APP_ROMFS_DIR}
+        VERBATIM
     )
 endif ()
 

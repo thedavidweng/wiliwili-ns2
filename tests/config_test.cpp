@@ -273,10 +273,11 @@ void check_switch2_wiring() {
     CHECK(cmake.find("option(PLATFORM_SWITCH2") != std::string::npos);
     CHECK(cmake.find("option(WILIWILI_BUILD_TESTS") != std::string::npos);
     CHECK(cmake.find("cmake/Switch2Platform.cmake") != std::string::npos);
-    // The NRO and the ELF are named for the port, the NACP keeps the upstream
-    // author, and the RomFS is staged from both resource trees.
+    // The NRO and the ELF are named for the port, the NACP credits the NS2
+    // port maintainer and contributors, and the RomFS is staged from both
+    // resource trees.
     CHECK(cmake.find("wiliwili-NS2") != std::string::npos);
-    CHECK(cmake.find("xfangfang and wiliwili-NS2 contributors") != std::string::npos);
+    CHECK(cmake.find("thedavidweng (NS2), xfangfang and contributors") != std::string::npos);
     CHECK(cmake.find("platform/switch2/switch2_wrapper.c") != std::string::npos);
     CHECK(cmake.find("${BOREALIS_DIR}/resources ${APP_ROMFS_DIR}") != std::string::npos);
     CHECK(cmake.find("switch_font.ttf") != std::string::npos);

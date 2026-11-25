@@ -8,6 +8,7 @@
 #include <borealis/core/cache_helper.hpp>
 #include <borealis/views/applet_frame.hpp>
 #include <borealis/views/dialog.hpp>
+#include <borealis/views/header.hpp>
 #include <borealis/views/cells/cell_bool.hpp>
 #include <borealis/views/cells/cell_input.hpp>
 
@@ -34,6 +35,8 @@
 #ifdef __linux__
 #include "borealis/platforms/desktop/steam_deck.hpp"
 #endif
+
+#include "view/qr_image.hpp"
 
 using namespace brls::literals;
 
@@ -109,6 +112,20 @@ const std::string_view OPENSOURCE =
     "https://chromium.googlesource.com/webm/libwebp\n\n"
     "Copyright (c) Google Inc. All Rights Reserved.\n\n"
     "Licensed under BSD 3-Clause \"New\" or \"Revised\" License\n\n\n"
+#endif
+#ifdef __SWITCH2__
+    "--------------------------------\n"
+    "libounce\n"
+    "--------------------------------\n"
+    "https://github.com/ouncebrew/libounce\n\n"
+    "Copyright libnx and libounce Contributors.\n\n"
+    "Licensed under ISC\n\n\n"
+    "--------------------------------\n"
+    "OunceVK\n"
+    "--------------------------------\n"
+    "https://github.com/ouncebrew/ouncevk\n\n"
+    "Copyright Mesa 3D and OunceVK Contributors.\n\n"
+    "Licensed under MIT\n\n\n"
 #endif
 #ifdef __SWITCH__
     "--------------------------------\n"
@@ -276,6 +293,30 @@ void SettingActivity::onContentAvailable() {
                                + " (GXM)"
 #endif
     );
+#ifdef __SWITCH2__
+    labelAboutTitle->setText("wiliwili-NS2");
+    labelAboutRepo->setText("https://github.com/thedavidweng/wiliwili-ns2");
+    qrAbout->setImageFromQRContent("https://github.com/thedavidweng/wiliwili-ns2");
+    {
+        const std::string locale = brls::Application::getLocale();
+        if (locale == brls::LOCALE_ZH_HANT || locale == brls::LOCALE_ZH_TW) {
+            headerAboutAuthor->setTitle("作者資訊");
+            labelAboutAuthor->setText(
+                "Nintendo Switch 2 移植維護：thedavidweng 及貢獻者\n"
+                "上游原專案（wiliwili）：xfangfang 及貢獻者（GPL-3.0）");
+        } else if (locale.rfind("zh", 0) == 0) {
+            headerAboutAuthor->setTitle("作者信息");
+            labelAboutAuthor->setText(
+                "Nintendo Switch 2 移植维护：thedavidweng 及贡献者\n"
+                "上游原项目（wiliwili）：xfangfang 及贡献者（GPL-3.0）");
+        } else {
+            headerAboutAuthor->setTitle("Authors");
+            labelAboutAuthor->setText(
+                "Nintendo Switch 2 port: thedavidweng and contributors\n"
+                "Upstream wiliwili: xfangfang and contributors (GPL-3.0)");
+        }
+    }
+#endif
     auto& mpv = MPVCore::instance();
     labelOpensource->setText(fmt::format(fmt::runtime(OPENSOURCE),
         mpv.getString("ffmpeg-version"), mpv.getString("mpv-version")));

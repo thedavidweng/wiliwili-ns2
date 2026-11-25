@@ -2,7 +2,7 @@
 
 ## Switch 2 自制移植版
 
-本仓库是 [wiliwili](https://github.com/xfangfang/wiliwili) 的非官方 Nintendo Switch 2 自制移植版（`wiliwili-NS2`），并非上游官方发布。本项目基于 `[ounce]` 工具链（[libounce](https://github.com/ouncebrew/libounce)、[OunceVK](https://github.com/ouncebrew/ouncevk)）新增了 `platform/switch2/` 平台后端，编译产物为 `wiliwili-NS2.nro`，面向运行 [kaiHEN](https://github.com/ouncebrew/kaihen) 的 Switch 2 主机。上游其他平台的代码保留在仓库中以便同步上游更新，本分支仅构建与分发 Switch 2 版本。遇到 Switch 2 相关问题请提交到[本仓库 Issues](https://github.com/thedavidweng/wiliwili-ns2/issues)，请勿向上游 `xfangfang/wiliwili` 反馈。
+本仓库是由 [thedavidweng](https://github.com/thedavidweng) 及贡献者移植维护的 [wiliwili](https://github.com/xfangfang/wiliwili) 非官方 Nintendo Switch 2 自制移植版（`wiliwili-NS2`），并非上游官方发布。本项目基于 `[ounce]` 工具链（[libounce](https://github.com/ouncebrew/libounce)、[OunceVK](https://github.com/ouncebrew/ouncevk)）新增了 `platform/switch2/` 平台后端，编译产物为 `wiliwili-NS2.nro`，面向运行 [kaiHEN](https://github.com/ouncebrew/kaihen) 的 Switch 2 主机。上游其他平台的代码保留在仓库中以便同步上游更新，本分支仅构建与分发 Switch 2 版本。遇到 Switch 2 相关问题请提交到[本仓库 Issues](https://github.com/thedavidweng/wiliwili-ns2/issues)，请勿向上游 `xfangfang/wiliwili` 反馈。
 
 基于 wiliwili v1.6.0（`yoga` 分支，commit `88e5876`）修改，并合入了 [dragonflylee/wiliwili](https://github.com/dragonflylee/wiliwili)（`dev` 分支，commit `e5dd00d`）的通用修复；精确依赖与工具链版本锁定见 [`UPSTREAM.json`](UPSTREAM.json)。
 
@@ -38,7 +38,7 @@ Switch 2 平台代码位于 `platform/switch2/`、`cmake/Switch2Platform.cmake` 
 
 ## Switch 2 homebrew port
 
-This fork is an unofficial Nintendo Switch 2 homebrew port of [wiliwili](https://github.com/xfangfang/wiliwili) (`wiliwili-NS2`), not an upstream release. It adds a Switch 2 backend in `platform/switch2/` on the `[ounce]` SDK ([libounce](https://github.com/ouncebrew/libounce), [OunceVK](https://github.com/ouncebrew/ouncevk)) and builds `wiliwili-NS2.nro` for a Switch 2 running [kaiHEN](https://github.com/ouncebrew/kaihen). Upstream platform targets stay in the tree so upstream merges remain clean, while this fork only distributes the Switch 2 build. Report Switch 2 problems in [this fork's issues](https://github.com/thedavidweng/wiliwili-ns2/issues), not to `xfangfang/wiliwili`.
+This fork is an unofficial Nintendo Switch 2 homebrew port of [wiliwili](https://github.com/xfangfang/wiliwili) (`wiliwili-NS2`), ported and maintained by [thedavidweng](https://github.com/thedavidweng) and contributors rather than an upstream release. It adds a Switch 2 backend in `platform/switch2/` on the `[ounce]` SDK ([libounce](https://github.com/ouncebrew/libounce), [OunceVK](https://github.com/ouncebrew/ouncevk)) and builds `wiliwili-NS2.nro` for a Switch 2 running [kaiHEN](https://github.com/ouncebrew/kaihen). Upstream platform targets stay in the tree so upstream merges remain clean, while this fork only distributes the Switch 2 build. Report Switch 2 problems in [this fork's issues](https://github.com/thedavidweng/wiliwili-ns2/issues), not to `xfangfang/wiliwili`.
 
 Modified from wiliwili v1.6.0 (`yoga`, commit `88e5876`) with shared fixes from [dragonflylee/wiliwili](https://github.com/dragonflylee/wiliwili) (`dev`, commit `e5dd00d`). Exact revision, container and package pins are recorded in [`UPSTREAM.json`](UPSTREAM.json).
 

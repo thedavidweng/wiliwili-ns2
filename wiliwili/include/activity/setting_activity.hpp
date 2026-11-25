@@ -12,8 +12,10 @@ class RadioCell;
 class BooleanCell;
 class InputCell;
 class Label;
+class Header;
 }  // namespace brls
 
+class QRImage;
 class TextBox;
 class BiliSelectorCell;
 
@@ -71,6 +73,11 @@ private:
     BRLS_BIND(brls::BooleanCell, cellWindowFullscreen, "cell/windowFullscreen");
     BRLS_BIND(BiliSelectorCell, cellOnTopMode, "cell/onTopMode");
     BRLS_BIND(brls::BooleanCell, cellVibration, "cell/gamepadVibration");
+    BRLS_BIND(brls::Label, labelAboutTitle, "setting/about/title");
     BRLS_BIND(brls::Label, labelAboutVersion, "setting/about/version");
+    BRLS_BIND(brls::Label, labelAboutRepo, "setting/about/repo");
+    BRLS_BIND(brls::Header, headerAboutAuthor, "setting/about/author_header");
+    BRLS_BIND(brls::Label, labelAboutAuthor, "setting/about/author");
+    BRLS_BIND(QRImage, qrAbout, "setting/about/qr");
     BRLS_BIND(BiliSelectorCell, selectorLiveSidebarCount, "setting/live/sidebar_count");
 };

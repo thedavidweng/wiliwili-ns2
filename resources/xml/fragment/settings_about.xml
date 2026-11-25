@@ -21,6 +21,7 @@
                 alignItems="flexEnd"
                 marginBottom="@style/wiliwili/margin/20">
             <brls:Label
+                    id="setting/about/title"
                     fontSize="60"
                     marginRight="10"
                     lineHeight="1"
@@ -38,6 +39,7 @@
                 marginBottom="@style/wiliwili/margin/20"/>
 
         <brls:Label
+                id="setting/about/brief"
                 marginLeft="20"
                 marginBottom="@style/wiliwili/margin/20"
                 text="@i18n/wiliwili/setting/about/brief"/>
@@ -45,12 +47,14 @@
                 title="@i18n/wiliwili/setting/about/repo_header"
                 marginBottom="@style/wiliwili/margin/20"/>
         <brls:Label
+                id="setting/about/repo"
                 textColor="#6693B6"
                 marginLeft="20"
                 marginBottom="@style/wiliwili/margin/20"
                 text="@i18n/wiliwili/github"/>
 
         <brls:Header
+                id="setting/about/author_header"
                 width="@style/wiliwili/about/speech/header"
                 title="@i18n/wiliwili/setting/about/author_header"
                 marginBottom="@style/wiliwili/margin/20"/>
@@ -70,6 +74,7 @@
                     marginRight="8"
                     image="@res/pictures/icon-quotation.png"/>
             <brls:Label
+                    id="setting/about/author"
                     width="@style/wiliwili/about/speech/width"
                     fontSize="18"
                     marginTop="@style/wiliwili/margin/20"
@@ -87,6 +92,7 @@
             alignItems="center"
             positionRight="30">
         <QRImage
+                id="setting/about/qr"
                 width="@style/wiliwili/about/qr"
                 height="@style/wiliwili/about/qr"
                 cornerRadius="6"

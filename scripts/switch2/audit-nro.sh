@@ -57,7 +57,7 @@ fi
 
 # The author string exists only in the NACP, so finding it proves the metadata
 # was embedded rather than left next to the NRO.
-if LC_ALL=C grep -a -q 'xfangfang and wiliwili-NS2 contributors' "$nro"; then
+if LC_ALL=C grep -a -q 'thedavidweng (NS2), xfangfang and contributors' "$nro"; then
     ok "NACP metadata is embedded"
 else
     fail "no NACP metadata in the NRO"
@@ -70,9 +70,9 @@ else
     fail "NACP title is '$nacp_title'"
 fi
 
-nacp_author="$(dd if="$nacp" bs=1 skip=512 count=48 2>/dev/null | tr -d '\000')"
+nacp_author="$(dd if="$nacp" bs=1 skip=512 count=64 2>/dev/null | tr -d '\000')"
 case "$nacp_author" in
-    'xfangfang and wiliwili-NS2 contributors'*) ok "NACP author keeps the upstream attribution" ;;
+    'thedavidweng (NS2), xfangfang and contributors'*) ok "NACP author is thedavidweng (NS2), xfangfang and contributors" ;;
     *) fail "NACP author is '$nacp_author'" ;;
 esac
 

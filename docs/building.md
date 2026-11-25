@@ -149,8 +149,8 @@ would let the Switch 1 EGL, GLES and Vulkan headers shadow OunceVK's.
 `wiliwili-NS2.nro` is built with `nacptool` and `elf2nro` from the unstripped
 `wiliwili-NS2.elf`, which stays in the build directory as its symbol source. The
 NRO carries no debug information: a ~40 MB image against a ~300 MB ELF, and no
-source paths from the ELF appear in it. The NACP keeps the upstream author:
-title `wiliwili-NS2`, author `xfangfang and wiliwili-NS2 contributors`, version
+source paths from the ELF appear in it. The NACP records the Switch 2 port attribution:
+title `wiliwili-NS2`, author `thedavidweng (NS2), xfangfang and contributors`, version
 from `git describe` (the CMake version when the build has no git).
 
 The RomFS is staged into `build/switch2-release/resources` before `elf2nro`
