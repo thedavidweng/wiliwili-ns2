@@ -233,6 +233,39 @@ void check_teardown_order() {
     CHECK(input >= 0);
     CHECK(video > input);
     CHECK(display == index - 1);
+
+    // In-app exit must return to kaiHEN (0) rather than killing the host process (1).
+    CHECK_EQ(wili::switch2AppletExitMode(true), 0u);
+    CHECK_EQ(wili::switch2AppletExitMode(false), 0u);
+}
+
+void check_system_tick_conversion() {
+    // Switch 2's hardware counter runs at 31.25 MHz (32 ns/tick), whereas
+    // Switch 1 ran at 19.2 MHz. Feeding 1 second of Switch 2 ticks into
+    // Borealis' Switch 1 formula ((ticks * 10) / 192) inflated time to
+    // 1,627,604 us (+62.8%), making danmaku scroll 1.63x too fast and jump on pause.
+    constexpr uint64_t kSwitch2FreqHz = 31250000ULL;
+    constexpr uint64_t kSwitch1FreqHz = 19200000ULL;
+
+    const uint64_t legacySwitch1FormulaOnSwitch2 = (kSwitch2FreqHz * 10ULL) / 192ULL;
+    CHECK_EQ(legacySwitch1FormulaOnSwitch2, 1627604ULL);
+    CHECK_EQ(wili::ticksToUsec(kSwitch2FreqHz, kSwitch2FreqHz), 1000000);
+    CHECK_EQ(wili::ticksToUsec(kSwitch1FreqHz, kSwitch1FreqHz), 1000000);
+
+    // Sub-frame and frame-interval precision at 60 Hz (520,833 ticks = 16,666 us)
+    // and 120 Hz (260,417 ticks = 8,333 us).
+    CHECK_EQ(wili::ticksToUsec(520833ULL, kSwitch2FreqHz), 16666);
+    CHECK_EQ(wili::ticksToUsec(260417ULL, kSwitch2FreqHz), 8333);
+    CHECK_EQ(wili::ticksToUsec(125ULL, kSwitch2FreqHz), 4);
+    CHECK_EQ(wili::ticksToUsec(0ULL, kSwitch2FreqHz), 0);
+    CHECK_EQ(wili::ticksToUsec(kSwitch2FreqHz, 0ULL), 0);
+
+    // Must not overflow uint64_t even after 365 days of continuous console uptime
+    // (where ticks * 1,000,000 would overflow 2^64 by >50x).
+    constexpr uint64_t kOneYearSeconds = 365ULL * 24ULL * 3600ULL;
+    constexpr uint64_t kOneYearTicks   = kOneYearSeconds * kSwitch2FreqHz;
+    CHECK_EQ(wili::ticksToUsec(kOneYearTicks, kSwitch2FreqHz),
+             static_cast<int64_t>(kOneYearSeconds * 1000000ULL));
 }
 
 void check_tls_default() {
@@ -325,6 +358,7 @@ int main() {
     check_pre_playback_probe();
     check_network_watch();
     check_teardown_order();
+    check_system_tick_conversion();
     check_tls_default();
 
     return test_check::report("switch2 lifecycle checks passed");

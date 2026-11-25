@@ -43,8 +43,12 @@ unset(CMAKE_C_FLAGS)
 unset(CMAKE_CXX_FLAGS)
 
 # A link map makes it checkable that no Switch 1 archive (libnx, the libnx GPU
-# libraries) ends up in the NRO.
-list(APPEND APP_PLATFORM_LINK_OPTION "-Wl,-Map=${CMAKE_BINARY_DIR}/wiliwili.map")
+# libraries) ends up in the NRO. Wrapping cpu_features_get_time_usec replaces
+# Borealis' hardcoded 19.2 MHz Switch 1 tick conversion with cntpct_el0/cntfrq_el0
+# (31.25 MHz on Switch 2) without modifying the pinned submodule.
+list(APPEND APP_PLATFORM_LINK_OPTION
+        "-Wl,-Map=${CMAKE_BINARY_DIR}/wiliwili.map"
+        "-Wl,--wrap=cpu_features_get_time_usec")
 
 # This port ships without third-party telemetry: analytics.h then compiles
 # without an endpoint, an identifier or a key in the binary.

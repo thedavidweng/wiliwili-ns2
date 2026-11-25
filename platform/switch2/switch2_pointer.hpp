@@ -113,6 +113,72 @@ inline uint64_t claimMaskForSide(PointerSide side) {
     }
 }
 
+// While a Joy-Con drives the visible mouse cursor, its stick is the scroll
+// wheel and its rail SL/SR buttons face the desk or fingers, so neither may
+// fire gamepad navigation or hand input ownership back to the controller.
+// Face buttons, D-pad, +/- and stick clicks remain unmasked so pressing them
+// returns to controller focus navigation immediately.
+inline constexpr uint64_t ACTIVE_MOUSE_LEFT_MASK =
+    (0xFull << 16) | (1ull << 24) | (1ull << 25);  // StickLLeft..Down | LeftSL | LeftSR
+inline constexpr uint64_t ACTIVE_MOUSE_RIGHT_MASK =
+    (0xFull << 20) | (1ull << 26) | (1ull << 27);  // StickRLeft..Down | RightSL | RightSR
+
+inline uint64_t activeMousePadMask(PointerSide side, bool cursor_visible) {
+    if (!cursor_visible) return 0;
+    switch (side) {
+        case PointerSide::Left:
+            return ACTIVE_MOUSE_LEFT_MASK;
+        case PointerSide::Right:
+            return ACTIVE_MOUSE_RIGHT_MASK;
+        default:
+            return 0;
+    }
+}
+
+// Resolves one frame's Joy-Con pointer movement. Uses hardware deltas when
+// reported, and falls back to same-side coordinate changes when x/y moved
+// without a delta, while never treating the initial idle sample at startup or
+// a side switch as cursor motion.
+struct PadDelta {
+    int dx     = 0;
+    int dy     = 0;
+    bool moved = false;
+};
+
+class PadMotionTracker {
+public:
+    PadDelta update(bool present, PointerSide side, int x, int y, int delta_x, int delta_y) {
+        if (!present || side == PointerSide::None) {
+            reset();
+            return {};
+        }
+        int dx = delta_x;
+        int dy = delta_y;
+        if (dx == 0 && dy == 0 && primed && side == last_side) {
+            dx = x - last_x;
+            dy = y - last_y;
+        }
+        primed    = true;
+        last_side = side;
+        last_x    = x;
+        last_y    = y;
+        return {dx, dy, dx != 0 || dy != 0};
+    }
+
+    void reset() {
+        primed    = false;
+        last_side = PointerSide::None;
+        last_x    = 0;
+        last_y    = 0;
+    }
+
+private:
+    bool primed           = false;
+    PointerSide last_side = PointerSide::None;
+    int last_x            = 0;
+    int last_y            = 0;
+};
+
 // Button ownership: while a Joy-Con is used as a mouse, its L/ZL or R/ZR are the
 // mouse click, so the gamepad mapping must never see them.
 //
@@ -123,8 +189,8 @@ inline uint64_t claimMaskForSide(PointerSide side) {
 class ButtonClaims {
 public:
     // pointer_pad_buttons: the buttons of the pad that drives PadPointer.
-    // claim_mask: the side's shoulder buttons while the pointer reports a click.
-    // The claim survives until the button is physically released.
+    // claim_mask: the side's shoulder buttons while the cursor is active or a
+    // click is held. The claim survives until the button is physically released.
     uint64_t update(uint64_t pointer_pad_buttons, uint64_t claim_mask) {
         this->claimed = (this->claimed | claim_mask) & pointer_pad_buttons;
         return this->claimed;
@@ -160,8 +226,8 @@ public:
     static constexpr uint64_t HIDE_DELAY_MS = 4000;
 
     // A Joy-Con or USB mouse sample arrived.
-    // moved: the cursor position or the wheel changed.
-    // left_down: a pointer click is held (a drag is in progress).
+    // moved: the cursor position, wheel or secondary button changed.
+    // left_down: a primary pointer click is held (a drag is in progress).
     void onPointerSample(uint64_t now_ms, bool moved, bool left_down) {
         dragging = left_down;
         if (moved || left_down) {

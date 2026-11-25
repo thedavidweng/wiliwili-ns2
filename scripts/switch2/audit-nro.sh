@@ -125,6 +125,12 @@ else
     fail "$map does not link OunceVK's GL stack"
 fi
 
+if grep -q '__wrap_cpu_features_get_time_usec' "$map"; then
+    ok "cpu_features_get_time_usec wrapped for Switch 2 31.25 MHz counter"
+else
+    fail "$map does not wrap cpu_features_get_time_usec"
+fi
+
 if grep -q '/opt/devkitpro/libnx/' "$map"; then
     fail "$map links Switch 1 libnx archives:"
     grep -o '/opt/devkitpro/libnx/[^ ]*' "$map" | sort -u | sed 's/^/      /'

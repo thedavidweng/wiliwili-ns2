@@ -362,8 +362,10 @@ void MPVCore::init() {
         mpvSetOptionString(mpv, "hwdec", "no");
     }
 
-    // Making the loading process faster
-#if defined(__SWITCH__)
+    // Making the loading process faster (Switch 1 drm_nouveau only: on Switch 2's
+    // OunceVK Zink stack, opengl-glfinish stalls the main UI thread on vkWaitForFences
+    // after every video frame and causes severe danmaku judder).
+#if defined(__SWITCH__) && !defined(__SWITCH2__)
     mpvSetOptionString(mpv, "vd-lavc-dr", "no");
     mpvSetOptionString(mpv, "vd-lavc-threads", "4");
     // This should fix random crash, but I don't know why.

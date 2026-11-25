@@ -293,6 +293,17 @@ void check_switch2_wiring() {
     // romfs section instead.
     CHECK(platform.find("LIBROMFS_PREBUILT_GENERATOR") == std::string::npos);
 
+    // Switch 2 wraps Borealis' 19.2 MHz Switch 1 timer with cntpct_el0/cntfrq_el0
+    // (31.25 MHz on Switch 2) so DanmakuCore and FramePacer run in real time.
+    CHECK(platform.find("-Wl,--wrap=cpu_features_get_time_usec") != std::string::npos);
+    const std::string switch2_display = read("platform/switch2/switch2_display.cpp");
+    CHECK(switch2_display.find("__wrap_cpu_features_get_time_usec") != std::string::npos);
+
+    // Switch 1's drm_nouveau workarounds (synchronous glFinish per video frame,
+    // vd-lavc-dr=no, fixed 4 threads) must not run on Switch 2's OunceVK Zink.
+    const std::string mpv_core = read("wiliwili/source/view/mpv_core.cpp");
+    CHECK(mpv_core.find("#if defined(__SWITCH__) && !defined(__SWITCH2__)") != std::string::npos);
+
     // The Switch 2 SDL backend is kept in this repository and replaces the one
     // in the pinned Borealis submodule, using GLES3 UBOs and a CJK-sized font
     // atlas so danmaku rendering does not thrash Zink state or reset mid-video.

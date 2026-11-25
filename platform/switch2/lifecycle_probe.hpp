@@ -146,6 +146,12 @@ inline constexpr TeardownStep TEARDOWN_ORDER[] = {
     TeardownStep::Ime,    TeardownStep::Font,  TeardownStep::Display,
 };
 
+// On Switch 2 (kaiHEN), NROs run inside a single homebrew loader session with
+// no NSP forwarders: __nx_applet_exit_mode = 1 kills the donor host process
+// instead of returning to kaiHEN. Keep 0 for every in-app exit; closing the
+// host application to the Horizon HOME screen stays on HOME -> Close Software.
+inline constexpr uint32_t switch2AppletExitMode(bool /*exitToHomeRequested*/) { return 0; }
+
 // --- The Switch 2 side, implemented in lifecycle_probe.cpp ----------------
 
 // Asks the console: audio route (aud:u) and network state. `probeAudioRoute` is

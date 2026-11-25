@@ -280,3 +280,12 @@ void displayShutdown() {
 }
 
 }  // namespace wili
+
+// Borealis' libretro features_cpu.c hardcodes Switch 1's 19.2 MHz tick
+// ((svcGetSystemTick() * 10) / 192), which runs 1.6276x fast on Switch 2's
+// 31.25 MHz counter. cmake/Switch2Platform.cmake wraps cpu_features_get_time_usec
+// here so brls::getCPUTimeUsec() (DanmakuCore, Application::setLimitedFPS,
+// FramePacer and Ticking) runs in real wall-clock microseconds without a syscall.
+extern "C" int64_t __wrap_cpu_features_get_time_usec(void) {
+    return wili::ticksToUsec(armGetSystemTick(), armGetSystemTickFreq());
+}

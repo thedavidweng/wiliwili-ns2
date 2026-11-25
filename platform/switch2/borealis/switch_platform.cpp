@@ -60,6 +60,7 @@
 
 #include "lifecycle_probe.hpp"
 #include "switch2_display.hpp"
+#include "switch2_pointer_device.hpp"
 
 extern "C" u32 __nx_applet_exit_mode;
 
@@ -131,7 +132,7 @@ bool inputActive() {
     // the state at this point of the loop.
     const bool changed = std::memcmp(state.buttons, lastControllerState.buttons, sizeof(state.buttons)) != 0;
     std::memcpy(lastControllerState.buttons, state.buttons, sizeof(state.buttons));
-    return anyPressed || changed;
+    return anyPressed || changed || wili::switch2::pointerFrameActive();
 }
 
 }  // namespace
@@ -277,7 +278,7 @@ bool SwitchPlatform::isApplicationMode() {
     return at == AppletType_Application || at == AppletType_SystemApplication;
 }
 
-void SwitchPlatform::exitToHomeMode(bool value) { __nx_applet_exit_mode = value; }
+void SwitchPlatform::exitToHomeMode(bool value) { __nx_applet_exit_mode = wili::switch2AppletExitMode(value); }
 
 void SwitchPlatform::forceEnableGamePlayRecording() { appletInitializeGamePlayRecording(); }
 

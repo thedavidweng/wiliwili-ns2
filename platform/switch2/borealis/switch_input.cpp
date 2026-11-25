@@ -55,24 +55,27 @@ using namespace brls;
 struct PointerRuntime {
     ButtonClaims claims;
     CursorArbiter cursor;
+    PadMotionTracker motion;
     Viewport viewport;
     // The digitizer domain and the viewport it maps through are separate from
     // the pointer's: the physical touchscreen does not change resolution when the
     // console is docked.
     TouchDomain touch_domain;
     Viewport touch_viewport;
-    // The pad PadPointer follows this frame: only its shoulder buttons can be
-    // claimed as mouse clicks.
-    PadState* pointer_pad = nullptr;
+    // The pad PadPointer follows: only its buttons are claimed or masked while
+    // that Joy-Con drives the cursor.
+    PadState* pointer_pad      = nullptr;
+    uint32_t prev_gamepad_mask = 0;
     LogicalPoint position;
     LogicalPoint offset;
     ScrollDelta scroll;
     RawPointerSample sample;
-    bool left_down   = false;
-    bool middle_down = false;
-    bool right_down  = false;
-    bool moved       = false;
-    bool subscribed  = false;
+    bool left_down    = false;
+    bool middle_down  = false;
+    bool right_down   = false;
+    bool moved        = false;
+    bool touch_active = false;
+    bool subscribed   = false;
     brls::Event<>::Subscription size_subscription;
     brls::Event<bool>::Subscription focus_subscription;
 };
@@ -165,15 +168,22 @@ void drawHoverFrame(NVGcontext* vg, uint64_t now) {
 
 // Called from the system keyboard and from every place a click must not survive
 // (focus loss, sleep, applet switch).
+bool pointerFrameActive() {
+    return runtime.moved || runtime.left_down || runtime.middle_down || runtime.right_down || runtime.touch_active;
+}
+
 void releasePointerClaims() {
     runtime.claims.reset();
     runtime.cursor.onFocusLost();
-    runtime.left_down   = false;
-    runtime.middle_down = false;
-    runtime.right_down  = false;
-    runtime.moved       = false;
-    runtime.offset      = {};
-    runtime.scroll      = {};
+    runtime.motion.reset();
+    runtime.pointer_pad  = nullptr;
+    runtime.left_down    = false;
+    runtime.middle_down  = false;
+    runtime.right_down   = false;
+    runtime.moved        = false;
+    runtime.touch_active = false;
+    runtime.offset       = {};
+    runtime.scroll       = {};
 }
 
 }  // namespace wili::switch2
@@ -215,36 +225,7 @@ static const uint64_t SWITCH_BUTTONS_FULL_MAPPING[_BUTTON_MAX] = {
     HidNpadButton_AnyLeft,   // BUTTON_NAV_LEFT
 };
 
-static const uint64_t SWITCH_BUTTONS_HALF_MAPPING[_BUTTON_MAX] = {
-    HidNpadButton_None,   // BUTTON_LT
-    HidNpadButton_AnySL,  // BUTTON_LB
 
-    HidNpadButton_StickL | HidNpadButton_StickR,  // BUTTON_LSB
-
-    HidNpadButton_None,  // BUTTON_UP
-    HidNpadButton_None,  // BUTTON_RIGHT
-    HidNpadButton_None,  // BUTTON_DOWN
-    HidNpadButton_None,  // BUTTON_LEFT
-
-    HidNpadButton_None,                        // BUTTON_BACK
-    HidNpadButton_None,                        // BUTTON_GUIDE
-    HidNpadButton_Plus | HidNpadButton_Minus,  // BUTTON_START
-
-    HidNpadButton_None,  // BUTTON_RSB
-
-    HidNpadButton_B | HidNpadButton_Up,     // BUTTON_Y
-    HidNpadButton_A | HidNpadButton_Left,   // BUTTON_B
-    HidNpadButton_X | HidNpadButton_Down,   // BUTTON_A
-    HidNpadButton_Y | HidNpadButton_Right,  // BUTTON_X
-
-    HidNpadButton_AnySR,  // BUTTON_RB
-    HidNpadButton_None,   // BUTTON_RT
-
-    HidNpadButton_StickLRight | HidNpadButton_StickRLeft,  // BUTTON_NAV_UP
-    HidNpadButton_StickLDown | HidNpadButton_StickRUp,     // BUTTON_NAV_RIGHT
-    HidNpadButton_StickLLeft | HidNpadButton_StickRRight,  // BUTTON_NAV_DOWN
-    HidNpadButton_StickLUp | HidNpadButton_StickRDown,     // BUTTON_NAV_LEFT
-};
 
 static const size_t SWITCH_AXIS_MAPPING[_AXES_MAX] = {
     LEFT_X,
@@ -255,8 +236,12 @@ static const size_t SWITCH_AXIS_MAPPING[_AXES_MAX] = {
 
 SwitchInputManager::SwitchInputManager() {
     padConfigureInput(GAMEPADS_MAX, HidNpadStyleSet_NpadStandard);
-    hidSetNpadJoyHoldType(HidNpadJoyHoldType_Horizontal);
-    hidSetNpadHandheldActivationMode(HidNpadHandheldActivationMode_Single);
+    // Reset to Horizon's upright Joy-Con and dual-rail handheld defaults (another
+    // NRO in the host process may have changed them): detaching one Joy-Con to
+    // slide on a desk transitions cleanly onto No1..No8, and Horizon's Nmouse
+    // pointer policy engages instead of treating single Joy-Cons as sideways pads.
+    hidSetNpadJoyHoldType(HidNpadJoyHoldType_Vertical);
+    hidSetNpadHandheldActivationMode(HidNpadHandheldActivationMode_Dual);
 
     padInitialize(&this->padStateHandheld, HidNpadIdType_Handheld);
     hidInitializeVibrationDevices(m_vibration_device_handheld, 2, HidNpadIdType_Handheld, HidNpadStyleTag_NpadHandheld);
@@ -380,6 +365,14 @@ void SwitchInputManager::updateUnifiedControllerState(ControllerState* state) {
         state->buttons[BUTTON_A] |= getKeyboardKeyState(BRLS_KBD_KEY_ENTER);
         state->buttons[BUTTON_B] |= getKeyboardKeyState(BRLS_KBD_KEY_ESCAPE);
     }
+
+    uint32_t current_mask = 0;
+    for (size_t i = 0; i < _BUTTON_MAX; i++) {
+        if (state->buttons[i]) current_mask |= (1u << i);
+    }
+    const uint32_t newly_pressed = current_mask & ~runtime.prev_gamepad_mask;
+    runtime.prev_gamepad_mask    = current_mask;
+    if (newly_pressed != 0) runtime.cursor.onGamepad();
 }
 
 short SwitchInputManager::getControllersConnectedCount() {
@@ -415,35 +408,35 @@ void SwitchInputManager::updateControllerStateInner(ControllerState* state, PadS
     padUpdate(pad);
     uint64_t keysDown = padGetButtons(pad);
 
-    // L/ZL or R/ZR of the Joy-Con that is being used as a mouse are the click,
-    // so the gamepad mapping must not see them. The latch was updated once this
-    // frame from that pad, and only that pad loses the buttons: a second
-    // controller keeps its own shoulder buttons.
-    keysDown = runtime.claims.strip(keysDown, pad == runtime.pointer_pad);
+    const bool is_pointer_pad = (pad == runtime.pointer_pad);
+    const bool cursor_visible = runtime.cursor.visible(nowMs());
 
-    if (keysDown != 0) runtime.cursor.onGamepad();
-
-    bool full = pad->style_set & HidNpadStyleSet_NpadFullCtrl;
+    // L/ZL or R/ZR of the Joy-Con driving the cursor are the mouse click, and
+    // while the cursor is visible that Joy-Con's stick is the scroll wheel and
+    // its rail SL/SR face the desk. Strip them only on the owning pad so every
+    // other controller keeps all of its buttons.
+    keysDown = runtime.claims.strip(keysDown, is_pointer_pad);
+    if (is_pointer_pad) {
+        keysDown &= ~activeMousePadMask(runtime.sample.pad.side, cursor_visible);
+    }
 
     for (size_t i = 0; i < _BUTTON_MAX; i++) {
-        uint64_t switchKey = full ? SWITCH_BUTTONS_FULL_MAPPING[i] : SWITCH_BUTTONS_HALF_MAPPING[i];
-        state->buttons[i]  = keysDown & switchKey;
+        uint64_t switchKey = SWITCH_BUTTONS_FULL_MAPPING[i];
+        state->buttons[i]  = (keysDown & switchKey) != 0;
     }
 
     HidAnalogStickState analog_stick_l = padGetStickPos(pad, 0);
     HidAnalogStickState analog_stick_r = padGetStickPos(pad, 1);
 
-    if (full) {
-        state->axes[LEFT_X]  = (float)analog_stick_l.x / (float)0x7FFF;
-        state->axes[LEFT_Y]  = (float)analog_stick_l.y / (float)0x7FFF * -1.0f;
-        state->axes[RIGHT_X] = (float)analog_stick_r.x / (float)0x7FFF;
-        state->axes[RIGHT_Y] = (float)analog_stick_r.y / (float)0x7FFF * -1.0f;
-    } else {
-        state->axes[LEFT_X] = (float)analog_stick_l.y / (float)0x7FFF * -1.0f + (float)analog_stick_r.y / (float)0x7FFF;
-        state->axes[LEFT_Y] = (float)analog_stick_l.x / (float)0x7FFF * -1.0f + (float)analog_stick_r.x / (float)0x7FFF;
-        state->axes[RIGHT_X] = 0;
-        state->axes[RIGHT_Y] = 0;
+    if (is_pointer_pad && cursor_visible) {
+        if (runtime.sample.pad.side == PointerSide::Left) analog_stick_l = {0, 0};
+        if (runtime.sample.pad.side == PointerSide::Right) analog_stick_r = {0, 0};
     }
+
+    state->axes[LEFT_X]  = (float)analog_stick_l.x / (float)0x7FFF;
+    state->axes[LEFT_Y]  = (float)analog_stick_l.y / (float)0x7FFF * -1.0f;
+    state->axes[RIGHT_X] = (float)analog_stick_r.x / (float)0x7FFF;
+    state->axes[RIGHT_Y] = (float)analog_stick_r.y / (float)0x7FFF * -1.0f;
 
     state->axes[LEFT_Z]  = 0;  // SWITCH NOT SUPPORT ZL AXIS
     state->axes[RIGHT_Z] = 0;  // SWITCH NOT SUPPORT ZR AXIS
@@ -456,9 +449,11 @@ bool SwitchInputManager::getKeyboardKeyState(BrlsKeyboardScancode key) {
 void SwitchInputManager::updateTouchStates(std::vector<RawTouchState>* states) {
     // Get touchscreen state
     static HidTouchScreenState hidState;
+    runtime.touch_active = false;
 
     if (hidGetTouchScreenStates(&hidState, 1) && hidState.count > 0) {
         // Touch takes the interface over from the mouse, which hides the cursor.
+        runtime.touch_active = true;
         runtime.cursor.onTouch();
 
         for (int i = 0; i < hidState.count; i++) {
@@ -554,28 +549,41 @@ void SwitchInputManager::runloopStart() {
 void SwitchInputManager::upToDateMouseState() {
     const uint64_t now = nowMs();
 
-    PadState* pad       = this->padStateHandheld.active_handheld ? &this->padStateHandheld : &this->padsState[0];
-    runtime.sample      = pointerSample(pad);
-    runtime.pointer_pad = pad;
+    runtime.sample = pointerSample();
 
-    // One latch update per frame, from the pad PadPointer follows. A second pad's
-    // frame must not be able to clear it, and only this pad loses the buttons.
-    runtime.claims.update(runtime.sample.pad.buttons, runtime.sample.pad.claim_mask);
+    PadState* resolved_pad = nullptr;
+    if (runtime.sample.pad.has_npad_id) {
+        const HidNpadIdType id = runtime.sample.pad.npad_id;
+        if (id == HidNpadIdType_Handheld) {
+            resolved_pad = &this->padStateHandheld;
+        } else if ((int)id >= 0 && (int)id < GAMEPADS_MAX) {
+            resolved_pad = &this->padsState[(int)id];
+        }
+    }
+    if (resolved_pad != nullptr) {
+        runtime.pointer_pad = resolved_pad;
+    } else if (runtime.claims.held() == 0) {
+        runtime.pointer_pad = nullptr;
+    }
 
     runtime.moved  = false;
     runtime.offset = {};
     runtime.scroll = {};
     bool left = false, middle = false, right = false;
 
+    const PadDelta pad_delta = runtime.motion.update(
+        runtime.sample.pad.present, runtime.sample.pad.side, runtime.sample.pad.x, runtime.sample.pad.y,
+        runtime.sample.pad.delta_x, runtime.sample.pad.delta_y);
+
     if (runtime.sample.pad.present) {
         // The Joy-Con pointer reports an absolute position inside the pointer
         // area, which is the framebuffer we handed to the service.
         runtime.position = toLogical(runtime.viewport, runtime.sample.pad.x, runtime.sample.pad.y);
 
-        if (runtime.sample.pad.delta_x != 0 || runtime.sample.pad.delta_y != 0) {
+        if (pad_delta.moved) {
             runtime.moved  = true;
-            runtime.offset = {(float)runtime.sample.pad.delta_x / runtime.viewport.scale,
-                              (float)runtime.sample.pad.delta_y / runtime.viewport.scale};
+            runtime.offset = {(float)pad_delta.dx / runtime.viewport.scale,
+                              (float)pad_delta.dy / runtime.viewport.scale};
         }
 
         if (runtime.sample.pad.wheel_y != 0) {
@@ -614,7 +622,28 @@ void SwitchInputManager::upToDateMouseState() {
     runtime.middle_down = middle;
     runtime.right_down  = right;
 
-    runtime.cursor.onPointerSample(now, runtime.moved, runtime.left_down);
+    runtime.cursor.onPointerSample(now, runtime.moved || runtime.middle_down || runtime.right_down, runtime.left_down);
+
+    const bool cursor_visible = runtime.cursor.visible(now);
+
+    // Claim L/ZL or R/ZR for the entire time the Joy-Con cursor is visible (plus
+    // any held click), so the first frame of a shoulder press never leaks into
+    // gamepad LB/RB/LT/RT before Nmouse projects HidMouseButton_Left.
+    uint64_t pointer_pad_buttons = 0;
+    if (runtime.pointer_pad != nullptr) {
+        padUpdate(runtime.pointer_pad);
+        pointer_pad_buttons = padGetButtons(runtime.pointer_pad);
+    }
+    const uint64_t claim_mask =
+        (runtime.sample.pad.present && (cursor_visible || runtime.sample.pad.left))
+            ? claimMaskForSide(runtime.sample.pad.side)
+            : 0;
+    runtime.claims.update(pointer_pad_buttons, claim_mask);
+
+    if (cursor_visible) {
+        this->pointerLocked = false;
+        Application::setDrawCoursor(true);
+    }
 }
 
 void SwitchInputManager::handleMouse() {
@@ -706,20 +735,13 @@ void SwitchInputManager::drawCursor(NVGcontext* vg) {
 
     drawHoverFrame(vg, now);
 
-    // Constant physical size: the pattern is drawn inside the
-    // nvgScale(windowScale) transform, so the logical size shrinks as the scale
-    // grows and the cursor stays the same number of framebuffer pixels.
-    const float scale  = viewportScale();
-    const float width  = (float)this->cursorWidth / scale;
-    const float height = (float)this->cursorHeight / scale;
-
-    this->paint.extent[0] = width;
-    this->paint.extent[1] = height;
-    this->paint.xform[4]  = runtime.position.x;
-    this->paint.xform[5]  = runtime.position.y;
+    // Drawn in logical units inside Application::frame()'s nvgScale(windowScale),
+    // so the cursor scales cleanly with handheld 1080p, docked 4K and UI scale.
+    this->paint.xform[4] = runtime.position.x;
+    this->paint.xform[5] = runtime.position.y;
 
     nvgBeginPath(vg);
-    nvgRect(vg, runtime.position.x, runtime.position.y, width, height);
+    nvgRect(vg, runtime.position.x, runtime.position.y, (float)this->cursorWidth, (float)this->cursorHeight);
     nvgFillPaint(vg, this->paint);
     nvgFill(vg);
 }
@@ -734,13 +756,14 @@ void SwitchInputManager::initCursor(NVGcontext* vg) {
         this->cursorTexture = nvgCreateImage(vg, BRLS_ASSET("img/sys/cursor.png"), 0);
 #endif
 
-        int width, height;
+        int width = 0, height = 0;
         nvgImageSize(vg, cursorTexture, &width, &height);
-        float aspect       = (float)height / (float)width;
-        this->cursorWidth  = 18;
-        this->cursorHeight = 18 * aspect;
+        float aspect       = width > 0 ? (float)height / (float)width : 1.0f;
+        this->cursorWidth  = 20;
+        this->cursorHeight = (int)std::lround(20.0f * aspect);
 
-        this->paint = nvgImagePattern(vg, 0, 0, this->cursorWidth, this->cursorHeight, 0, this->cursorTexture, 1.0f);
+        this->paint = nvgImagePattern(vg, 0, 0, (float)this->cursorWidth, (float)this->cursorHeight, 0,
+                                      this->cursorTexture, 1.0f);
         this->cursorInited = true;
     }
 }

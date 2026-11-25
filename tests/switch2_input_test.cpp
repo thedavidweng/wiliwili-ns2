@@ -310,6 +310,72 @@ void check_hover_feedback() {
     CHECK(!showHoverFrame(state));
 }
 
+// Regression for real-console Joy-Con 2 mouse mode:
+// 1. An idle sample on boot must not wake the cursor, while either hardware
+//    deltas or same-side x/y coordinate changes wake it cleanly.
+// 2. While the cursor is visible on one Joy-Con, that side's stick scroll
+//    directions and rail SL/SR buttons are suppressed on the owning pad (so
+//    scrolling or resting the rail on a desk never flips Borealis back to
+//    GAMEPAD mode and hides the cursor), while face/D-pad buttons stay active.
+void check_pad_motion_and_active_masks() {
+    PadMotionTracker tracker;
+
+    // Boot idle frame: PadPointer reports active=true with (960, 540), delta=(0, 0).
+    PadDelta d0 = tracker.update(true, PointerSide::Right, 960, 540, 0, 0);
+    CHECK(!d0.moved);
+    CHECK_EQ(d0.dx, 0);
+    CHECK_EQ(d0.dy, 0);
+
+    // Hardware delta moves the cursor.
+    PadDelta d1 = tracker.update(true, PointerSide::Right, 978, 534, 18, -6);
+    CHECK(d1.moved);
+    CHECK_EQ(d1.dx, 18);
+    CHECK_EQ(d1.dy, -6);
+
+    // Same-side coordinate change with zero hardware delta still moves the cursor.
+    PadDelta d2 = tracker.update(true, PointerSide::Right, 990, 540, 0, 0);
+    CHECK(d2.moved);
+    CHECK_EQ(d2.dx, 12);
+    CHECK_EQ(d2.dy, 6);
+
+    // Switching from Right to Left without a hardware delta re-primes without a
+    // spurious jump across the screen.
+    PadDelta d3 = tracker.update(true, PointerSide::Left, 200, 300, 0, 0);
+    CHECK(!d3.moved);
+    PadDelta d4 = tracker.update(true, PointerSide::Left, 215, 305, 0, 0);
+    CHECK(d4.moved);
+    CHECK_EQ(d4.dx, 15);
+    CHECK_EQ(d4.dy, 5);
+
+    // Resetting on focus loss re-primes cleanly.
+    tracker.reset();
+    CHECK(!tracker.update(true, PointerSide::Left, 400, 400, 0, 0).moved);
+
+    // Active mouse pad masks: while hidden, nothing is masked.
+    CHECK_EQ(activeMousePadMask(PointerSide::Left, false), (uint64_t)0);
+    CHECK_EQ(activeMousePadMask(PointerSide::Right, false), (uint64_t)0);
+    CHECK_EQ(activeMousePadMask(PointerSide::None, true), (uint64_t)0);
+
+    // Right Joy-Con mouse suppresses StickR pseudo-buttons + RightSL/SR, never A/B/R-stick-click/Left.
+    const uint64_t A       = 1ull << 0;
+    const uint64_t StickLUp = 1ull << 17;
+    const uint64_t StickRUp = 1ull << 21;
+    const uint64_t LeftSL  = 1ull << 24;
+    const uint64_t RightSR = 1ull << 27;
+    const uint64_t rmask   = activeMousePadMask(PointerSide::Right, true);
+    CHECK((rmask & StickRUp) != 0);
+    CHECK((rmask & RightSR) != 0);
+    CHECK_EQ(rmask & A, (uint64_t)0);
+    CHECK_EQ(rmask & StickLUp, (uint64_t)0);
+    CHECK_EQ(rmask & LeftSL, (uint64_t)0);
+
+    const uint64_t lmask = activeMousePadMask(PointerSide::Left, true);
+    CHECK((lmask & StickLUp) != 0);
+    CHECK((lmask & LeftSL) != 0);
+    CHECK_EQ(lmask & StickRUp, (uint64_t)0);
+    CHECK_EQ(lmask & RightSR, (uint64_t)0);
+}
+
 // The stick wheel is a vertical scroll; the up axis is +y in Borealis.
 void check_scroll_mapping() {
     CHECK_EQ(toScroll(0, 0).x, 0.0f);
@@ -533,6 +599,7 @@ int main() {
     check_multi_pad_claims();
     check_cursor_arbitration();
     check_hover_feedback();
+    check_pad_motion_and_active_masks();
     check_scroll_mapping();
     check_ime_requests();
     check_pinyin_fallback();

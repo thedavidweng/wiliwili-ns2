@@ -18,6 +18,16 @@
 
 namespace wili {
 
+// Converts hardware counter ticks (armGetSystemTick / cntpct_el0) to
+// microseconds at the counter's actual frequency (armGetSystemTickFreq /
+// cntfrq_el0: 31.25 MHz on Switch 2 vs 19.2 MHz on Switch 1) without 64-bit
+// overflow across multi-month uptimes.
+inline constexpr int64_t ticksToUsec(uint64_t ticks, uint64_t freqHz) {
+    if (freqHz == 0) return 0;
+    return static_cast<int64_t>((ticks / freqHz) * 1000000ULL +
+                                ((ticks % freqHz) * 1000000ULL) / freqHz);
+}
+
 // The output the console says it is driving: appletGetDefaultDisplayResolution
 // plus appletGetOperationMode. Switch 2 reports 1920x1080 in handheld; a docked
 // television can report something else entirely, and nothing here assumes it.
