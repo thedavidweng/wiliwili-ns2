@@ -18,6 +18,7 @@
 #include "utils/activity_helper.hpp"
 #include "utils/boot_diagnostics.hpp"
 #include "utils/boot_api.h"
+#include "utils/perf_diagnostics.hpp"
 #include "view/mpv_core.hpp"
 
 #ifdef IOS
@@ -39,6 +40,7 @@ namespace {
 }
 
 int run(int argc, char* argv[]) {
+    const brls::Time bootStartUs = brls::getCPUTimeUsec();
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "-d") == 0) {
             brls::Logger::setLogLevel(brls::LogLevel::LOG_DEBUG);
@@ -46,6 +48,8 @@ int run(int argc, char* argv[]) {
             brls::Application::enableDebuggingView(true);
         } else if (std::strcmp(argv[i], "-t") == 0) {
             MPVCore::TERMINAL = true;
+        } else if (std::strcmp(argv[i], "--perf") == 0) {
+            wili::PerfDiagnostics::instance().setEnabled(true);
         } else if (std::strcmp(argv[i], "-o") == 0) {
             const char* path = (i + 1 < argc) ? argv[++i] : "wiliwili.log";
             brls::Logger::setLogOutput(std::fopen(path, "w+"));
@@ -119,9 +123,15 @@ int run(int argc, char* argv[]) {
                     {"window", fmt::format("{}x{}", brls::Application::windowWidth, brls::Application::windowHeight)}})
     APPVersion::instance().checkUpdate();
 
+    wili::PerfDiagnostics::instance().markStartup(
+        static_cast<uint64_t>(std::max<brls::Time>(0, brls::getCPUTimeUsec() - bootStartUs) / 1000));
+
     // Run the app
     // brls::Application::setLimitedFPS(60);
     while (brls::Application::mainLoop()) {
+        if (wili::PerfDiagnostics::instance().isEnabled()) {
+            wili::PerfDiagnostics::instance().recordUiFrameTimestamp(brls::getCPUTimeUsec());
+        }
     }
 
     brls::Logger::info("mainLoop done");

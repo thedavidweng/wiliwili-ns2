@@ -8,10 +8,12 @@
 #include <pystring.h>
 #include <borealis/core/thread.hpp>
 #include <borealis/core/application.hpp>
+#include <borealis/core/time.hpp>
 
 #include "utils/config_helper.hpp"
 #include "utils/number_helper.hpp"
 #include "utils/crash_helper.hpp"
+#include "utils/perf_diagnostics.hpp"
 #include "utils/platform_api.h"
 #include "view/mpv_core.hpp"
 
@@ -219,6 +221,9 @@ void MPVCore::on_update(void *self) {
         // 绘制到 FBO、纹理、buffer...上，在主循环结尾进行绘制，MPVCore 的绘制函数内直接绘制对应的 FBO、纹理、buffer...
         core.redraw = flags & MPV_RENDER_UPDATE_FRAME;
         if (core.redraw) {
+            auto& perf              = wili::PerfDiagnostics::instance();
+            const bool trackPerf    = perf.isEnabled();
+            const brls::Time startUs = trackPerf ? brls::getCPUTimeUsec() : 0;
 #ifdef MPV_SW_RENDER
             if (!core.pixels) return;
             mpvRenderContextRender(core.mpv_context, core.mpv_params);
@@ -231,6 +236,10 @@ void MPVCore::on_update(void *self) {
 #endif
             mpvRenderContextReportSwap(core.mpv_context);
 #endif
+            if (trackPerf) {
+                const brls::Time endUs = brls::getCPUTimeUsec();
+                if (endUs >= startUs) perf.recordVideoRenderDuration(static_cast<uint64_t>(endUs - startUs));
+            }
         }
 #endif
     });
@@ -656,7 +665,8 @@ void MPVCore::initializeVideo() {
 
     if (vertexShader) glDeleteShader(vertexShader);
     if (fragmentShader) glDeleteShader(fragmentShader);
-    this->shader.prog = shaderProgram;
+    this->shader.prog         = shaderProgram;
+    this->shader.alphaUniform = shaderProgram ? glGetUniformLocation(shaderProgram, "Alpha") : -1;
 
     // set up vertex data (and buffer(s)) and configure vertex attributes
     // ------------------------------------------------------------------
@@ -685,6 +695,9 @@ void MPVCore::initializeVideo() {
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
+#else
+    this->shader.posAttr      = shaderProgram ? glGetAttribLocation(shaderProgram, "aPos") : -1;
+    this->shader.texCoordAttr = shaderProgram ? glGetAttribLocation(shaderProgram, "aTexCoord") : -1;
 #endif
     brls::Logger::debug("initializeGL done");
 #endif
@@ -756,11 +769,13 @@ void MPVCore::setFrameSize(brls::Rect r) {
     int drawHeight = rect.getHeight() * brls::Application::windowScale;
 
     if (drawWidth == 0 || drawHeight == 0) return;
-    brls::Logger::debug("MPVCore::setFrameSize: {}/{}", drawWidth, drawHeight);
-    glBindTexture(GL_TEXTURE_2D, this->media_texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, drawWidth, drawHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    this->mpv_fbo.w = drawWidth;
-    this->mpv_fbo.h = drawHeight;
+    if (drawWidth != this->mpv_fbo.w || drawHeight != this->mpv_fbo.h) {
+        brls::Logger::debug("MPVCore::setFrameSize: {}/{}", drawWidth, drawHeight);
+        glBindTexture(GL_TEXTURE_2D, this->media_texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, drawWidth, drawHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        this->mpv_fbo.w = drawWidth;
+        this->mpv_fbo.h = drawHeight;
+    }
 
     float new_min_x = rect.getMinX() / brls::Application::contentWidth * 2 - 1;
     float new_min_y = 1 - rect.getMinY() / brls::Application::contentHeight * 2;
@@ -872,13 +887,15 @@ void MPVCore::draw(brls::Rect area, float alpha) {
 #else
     glBindBuffer(GL_ARRAY_BUFFER, shader.vbo);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, shader.ebo);
-    static GLuint aPos = glGetAttribLocation(shader.prog, "aPos");
-    glVertexAttribPointer(aPos, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)nullptr);
-    glEnableVertexAttribArray(aPos);
-
-    static GLuint aTexCoord = glGetAttribLocation(shader.prog, "aTexCoord");
-    glVertexAttribPointer(aTexCoord, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)(3 * sizeof(float)));
-    glEnableVertexAttribArray(aTexCoord);
+    if (shader.posAttr >= 0) {
+        glVertexAttribPointer(shader.posAttr, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)nullptr);
+        glEnableVertexAttribArray(shader.posAttr);
+    }
+    if (shader.texCoordAttr >= 0) {
+        glVertexAttribPointer(shader.texCoordAttr, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float),
+                              (void *)(3 * sizeof(float)));
+        glEnableVertexAttribArray(shader.texCoordAttr);
+    }
 #endif
 
     // Set alpha
@@ -888,8 +905,9 @@ void MPVCore::draw(brls::Rect area, float alpha) {
     } else {
         glDisable(GL_BLEND);
     }
-    static GLint alphaID = glGetUniformLocation(shader.prog, "Alpha");
-    glUniform1f(alphaID, alpha);
+    if (shader.alphaUniform >= 0) {
+        glUniform1f(shader.alphaUniform, alpha);
+    }
 
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
 #endif

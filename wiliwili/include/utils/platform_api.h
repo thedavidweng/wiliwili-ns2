@@ -40,6 +40,11 @@ void wiliwili_pre_playback_probe(void);
  * and shared with the settings screen that opens the keyboard for it. */
 int wiliwili_proxy_is_sensitive(const char* url);
 
+/* Called by the Switch 2 display layer whenever output mode or refresh changes
+ * so performance diagnostics never guess physical vs render resolution. */
+void wiliwili_report_display_metrics(int refreshHz, int vrr, int outputW, int outputH, int renderW, int renderH,
+                                     int docked);
+
 #ifdef __cplusplus
 }
 #endif

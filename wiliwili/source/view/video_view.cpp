@@ -25,6 +25,7 @@
 #include "view/video_view.hpp"
 
 #include "utils/shortcut_helper.hpp"
+#include "utils/perf_diagnostics.hpp"
 #include "view/live_core.hpp"
 #include "view/subtitle_core.hpp"
 #include "view/video_snapshot_core.hpp"
@@ -944,6 +945,7 @@ void VideoView::toggleVideoProfile() {
         videoProfile->setVisibility(brls::Visibility::INVISIBLE);
         return;
     }
+    wili::PerfDiagnostics::instance().setEnabled(true);
     videoProfile->setVisibility(brls::Visibility::VISIBLE);
     videoProfile->update();
 }

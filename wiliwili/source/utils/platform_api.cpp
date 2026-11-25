@@ -9,6 +9,8 @@
 
 #if defined(__SWITCH2__)
 #include "api/bilibili/util/http.hpp"
+#include "utils/event_helper.hpp"
+#include "utils/perf_diagnostics.hpp"
 #endif
 
 /* scheme://user:pass@host. The credentials sit between the scheme separator and
@@ -27,5 +29,16 @@ int wiliwili_proxy_is_sensitive(const char* url) {
 }
 
 #if defined(__SWITCH2__)
-void wiliwili_network_reset(void) { bilibili::HTTP::resetDnsCache(); }
+void wiliwili_network_reset(void) {
+    bilibili::HTTP::resetDnsCache();
+    APP_E->fire("SWITCH2_NETWORK_RECOVERED", nullptr);
+}
+
+void wiliwili_report_display_metrics(int refreshHz, int vrr, int outputW, int outputH, int renderW, int renderH,
+                                     int docked) {
+    wili::PerfDiagnostics::instance().setDisplayMetrics(refreshHz, vrr != 0, outputW, outputH, renderW, renderH,
+                                                        docked != 0);
+}
+#else
+void wiliwili_report_display_metrics(int, int, int, int, int, int, int) {}
 #endif

@@ -1,0 +1,97 @@
+name: Switch 2 CI & Host Tests
+
+on:
+  push:
+    branches: [ main, feat/switch2 ]
+  pull_request:
+    branches: [ main, feat/switch2 ]
+  workflow_dispatch:
+
+jobs:
+  desktop-tests:
+    name: Desktop Build & Host Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config libssl-dev libmpv-dev libwebp-dev
+
+      - name: Configure desktop-release
+        run: cmake --preset desktop-release
+
+      - name: Build desktop-release
+        run: cmake --build --preset desktop-release -j"$(nproc)"
+
+      - name: Run ctest
+        run: ctest --preset desktop-release --output-on-failure
+
+  hygiene-audit:
+    name: Repository Hygiene & Pin Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for accidental credentials or secrets
+        run: |
+          ! grep -rnE "SESSDATA=[0-9a-fA-F]{16,}|bili_jct=[0-9a-fA-F]{16,}" \
+            wiliwili/ platform/ tests/ docs/ resources/ scripts/
+
+      - name: Verify UPSTREAM.json has no floating pins
+        run: |
+          python3 -c '
+          import json, sys
+          with open("UPSTREAM.json") as f:
+              raw = f.read()
+          data = json.loads(raw)
+          assert data["schema"] == 1
+          assert "latest" not in raw.lower()
+          '
+
+  switch2-nro:
+    name: Switch 2 Release NRO & Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Switch 2 toolchain image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: scripts/switch2/Dockerfile
+          tags: wiliwili-ns2-toolchain:local
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Configure, build and audit Switch 2 NRO
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src wiliwili-ns2-toolchain:local \
+            sh -c 'cmake --preset switch2-release && cmake --build --preset switch2-release -j"$(nproc)" && sh scripts/switch2/audit-nro.sh build/switch2-release'
+
+      - name: Package Switch 2 artifacts and checksums
+        run: |
+          mkdir -p dist/switch/wiliwili-ns2
+          cp build/switch2-release/wiliwili-NS2.nro dist/wiliwili-NS2.nro
+          cp build/switch2-release/wiliwili-NS2.nro dist/switch/wiliwili-ns2/wiliwili-NS2.nro
+          (cd dist && sha256sum wiliwili-NS2.nro > SHA256SUMS)
+
+      - name: Upload Switch 2 NRO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiliwili-NS2-nro
+          path: |
+            dist/wiliwili-NS2.nro
+            dist/SHA256SUMS

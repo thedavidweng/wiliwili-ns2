@@ -3,7 +3,7 @@
 [wiliwili](https://github.com/xfangfang/wiliwili)（v1.6.0）的 Nintendo Switch 2 非官方移植版，由 [thedavidweng](https://github.com/thedavidweng) 独立移植维护。基于 `[ounce]` 工具链（[libounce](https://github.com/ouncebrew/libounce) / [OunceVK](https://github.com/ouncebrew/ouncevk)）构建，本仓库仅分发 Switch 2 版本（`wiliwili-NS2.nro`）。Switch 2 相关问题请提交至[本仓库 Issues](https://github.com/thedavidweng/wiliwili-ns2/issues)，请勿向上游反馈。
 
 - **安装**：从[本仓库 Releases](https://github.com/thedavidweng/wiliwili-ns2/releases) 下载压缩包解压至内存卡根目录（`/switch/wiliwili-ns2/wiliwili-NS2.nro` 或 `/switch/wiliwili-NS2.nro`），在 [kaiHEN](https://github.com/ouncebrew/kaihen) 中启动。配置与 `boot.log` 独立保存在 `/config/wiliwili-ns2/`。
-- **适配**：OunceVK（OpenGL ES）渲染与 `libounce` 硬解/软解回退；支持手柄、触屏、左右 Joy-Con 2 鼠标模式、系统中文输入法（`swkbd`）及系统共享 CJK 字库；支持 1080p 掌机、底座分辨率/高刷切换、空闲降帧与睡眠唤醒恢复；移除遥测（`NO_GA`）。
+- **适配**：OunceVK（OpenGL ES 3.1）渲染与 FFmpeg 7.1 / mpv 0.36.0 软解基线（`VideoDecoder` 硬解评估中）；支持手柄、触屏、左右 Joy-Con 2 鼠标模式、系统中文输入法（`swkbd`）及系统共享 CJK 字库；支持 1080p 掌机、底座分辨率/高刷切换、空闲降帧与睡眠唤醒恢复；移除遥测（`NO_GA`）。
 - **构建**：后端位于 `platform/switch2/`，编译说明见 [`docs/building.md`](docs/building.md)（`scripts/switch2/build.sh`），版本锁定见 [`UPSTREAM.json`](UPSTREAM.json)。
 
 以下为原版 README：

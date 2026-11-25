@@ -27,6 +27,7 @@
 #include <fmt/format.h>
 
 #include "utils/boot_api.h"
+#include "utils/platform_api.h"
 
 namespace {
 
@@ -179,6 +180,9 @@ void applyFramebuffer() {
     }
 
     note(wili::describeDisplay(state.output, state.framebuffer, state.refresh));
+    wiliwili_report_display_metrics(state.refresh.hz, state.refresh.vrr ? 1 : 0, state.output.width,
+                                    state.output.height, framebufferWidth, framebufferHeight,
+                                    state.output.docked ? 1 : 0);
 }
 
 // Re-reads the output mode and the refresh rate, and applies a change.

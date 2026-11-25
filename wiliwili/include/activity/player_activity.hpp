@@ -11,6 +11,7 @@
 #include "view/recycling_grid.hpp"
 #include "view/auto_tab_frame.hpp"
 #include "utils/event_helper.hpp"
+#include "utils/playback_recovery.hpp"
 
 class VideoView;
 class UserInfoView;
@@ -137,9 +138,15 @@ protected:
 private:
     bool activityShown = false;
     std::chrono::system_clock::time_point videoDeadline{};
+    wili::PlaybackRecovery playbackRecovery;
 
     // 重新选择当前清晰度的播放链接播放
     void updateVideoLink();
+
+    // Reopen the active video/season stream at the saved timestamp after a
+    // mid-stream error, premature EOF, or network/resume transition.
+    void schedulePlaybackRecovery(int delayMs);
+    void attemptPlaybackRecovery();
 };
 
 class PlayerActivity : public BasePlayerActivity {

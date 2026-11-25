@@ -83,3 +83,42 @@ target_include_directories(wiliwili_danmaku_test PRIVATE
 target_compile_definitions(wiliwili_danmaku_test PRIVATE
         WILIWILI_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 add_test(NAME danmaku_motion COMMAND wiliwili_danmaku_test)
+
+# Playback recovery, opt-in p50/p95/p99 performance diagnostics, DASH track
+# selection, and MPVCore GLES renderer invariants (#7, #8, #9).
+add_executable(wiliwili_mpv_core_test
+        mpv_core_test.cpp
+        ${PROJECT_SOURCE_DIR}/wiliwili/source/utils/perf_diagnostics.cpp)
+set_target_properties(wiliwili_mpv_core_test PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON)
+target_include_directories(wiliwili_mpv_core_test PRIVATE
+        ${PROJECT_SOURCE_DIR}/wiliwili/include
+        ${PROJECT_SOURCE_DIR}/wiliwili/include/api
+        ${BOREALIS_LIBRARY}/include
+        ${BOREALIS_LIBRARY}/include/borealis/extern)
+target_link_libraries(wiliwili_mpv_core_test PRIVATE fmt)
+target_compile_definitions(wiliwili_mpv_core_test PRIVATE
+        WILIWILI_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+add_test(NAME mpv_core_perf COMMAND wiliwili_mpv_core_test)
+
+# Deterministic Bilibili API verification seam: WBI signing, repaired endpoint
+# paths (TripleWeb), and sanitized JSON model deserialization (#11, #12, #18, #19).
+add_executable(wiliwili_bilibili_api_test
+        bilibili_api_test.cpp
+        ${PROJECT_SOURCE_DIR}/wiliwili/source/api/util/json.cpp
+        ${PROJECT_SOURCE_DIR}/wiliwili/source/api/util/http.cpp
+        ${PROJECT_SOURCE_DIR}/wiliwili/source/api/util/wbi.cpp
+        ${PROJECT_SOURCE_DIR}/wiliwili/source/utils/number_helper.cpp)
+set_target_properties(wiliwili_bilibili_api_test PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON)
+target_include_directories(wiliwili_bilibili_api_test PRIVATE
+        ${PROJECT_SOURCE_DIR}/wiliwili/include
+        ${PROJECT_SOURCE_DIR}/wiliwili/include/api
+        ${BOREALIS_LIBRARY}/include
+        ${BOREALIS_LIBRARY}/include/borealis/extern)
+target_link_libraries(wiliwili_bilibili_api_test PRIVATE cpr::cpr pystring fmt)
+target_compile_definitions(wiliwili_bilibili_api_test PRIVATE
+        WILIWILI_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+add_test(NAME bilibili_api COMMAND wiliwili_bilibili_api_test)

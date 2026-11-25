@@ -4,6 +4,7 @@
 
 #include <utility>
 #include <borealis/core/thread.hpp>
+#include <borealis/core/time.hpp>
 #include <borealis/core/touch/tap_gesture.hpp>
 #include <borealis/views/applet_frame.hpp>
 #include <borealis/views/dialog.hpp>
@@ -13,8 +14,10 @@
 #include "fragment/player_coin.hpp"
 #include "fragment/player_single_comment.hpp"
 #include "utils/config_helper.hpp"
+#include "utils/dash_selector.hpp"
 #include "utils/dialog_helper.hpp"
 #include "utils/number_helper.hpp"
+#include "utils/perf_diagnostics.hpp"
 #include "presenter/comment_related.hpp"
 #include "utils/shortcut_helper.hpp"
 #include "view/qr_image.hpp"
@@ -324,6 +327,19 @@ void BasePlayerActivity::setCommonData() {
                 }
                 break;
             }
+            case MpvEventEnum::MPV_LOADED:
+                playbackRecovery.onStreamLoaded();
+                break;
+            case MpvEventEnum::MPV_FILE_ERROR: {
+                const int64_t progress = MPVCore::instance().video_progress;
+                const int64_t duration = MPVCore::instance().duration;
+                if (playbackRecovery.onStreamFailure(progress, duration, videoUrlResult.clipEnd, false,
+                                                     brls::getCPUTimeUsec())) {
+                    brls::Logger::warning("Playback error at {}s; scheduling stream recovery attempt", progress);
+                    this->schedulePlaybackRecovery(2000);
+                }
+                break;
+            }
             case MpvEventEnum::END_OF_FILE:
                 // 尝试自动加载下一分集
                 // 如果当前最顶层是Dialog就放弃自动播放，因为有可能是用户点开了收藏或者投币对话框
@@ -336,9 +352,11 @@ void BasePlayerActivity::setCommonData() {
                         clipEnd = duration - seasonCustom.clip_end;
                     }
 
-                    // 播放到一半没网时也会触发EOF，这里简单判断一下结束播放时的播放条位置是否在片尾或视频结尾附近
-                    if ((duration - progress > 5 || progress - duration > 5) && !(clipEnd > 0 && clipEnd - progress < 5)) {
-                        brls::Logger::error("EOF: video: {} duration: {} clipEnd: {}", progress, duration, clipEnd);
+                    // 播放到一半没网时也会触发EOF，尝试在保存的时间点恢复播放
+                    if (playbackRecovery.onStreamFailure(progress, duration, clipEnd, true, brls::getCPUTimeUsec())) {
+                        brls::Logger::warning("Premature EOF at {}s (duration {}s, clipEnd {}s); recovering stream",
+                                              progress, duration, clipEnd);
+                        this->schedulePlaybackRecovery(2000);
                         return;
                     }
                     if (PLAYER_STRATEGY == PlayerStrategy::LOOP) {
@@ -390,6 +408,9 @@ void BasePlayerActivity::setCommonData() {
             }
         } else if (event == "REQUEST_CAST_URL") {
             this->requestCastUrl();
+        } else if (event == "SWITCH2_NETWORK_RECOVERED") {
+            playbackRecovery.onNetworkRecovered(brls::getCPUTimeUsec());
+            this->attemptPlaybackRecovery();
         }
     });
 
@@ -438,6 +459,30 @@ void BasePlayerActivity::showCoinDialog(uint64_t aid) {
         [this, playerCoin, aid](int value) { this->addCoin(aid, value, playerCoin->likeAtTheSameTime()); });
     auto dialog = new brls::Dialog(playerCoin);
     dialog->open();
+}
+
+void BasePlayerActivity::schedulePlaybackRecovery(int delayMs) {
+    ASYNC_RETAIN
+    brls::Threading::delay(delayMs, [ASYNC_TOKEN]() {
+        brls::sync([ASYNC_TOKEN]() {
+            ASYNC_RELEASE
+            this->attemptPlaybackRecovery();
+        });
+    });
+}
+
+void BasePlayerActivity::attemptPlaybackRecovery() {
+    if (!activityShown) return;
+    if (!playbackRecovery.shouldRetry(brls::getCPUTimeUsec())) return;
+
+    const int64_t savedPos = playbackRecovery.savedPosition();
+    brls::Logger::info("Attempting playback recovery #{} at {}s", playbackRecovery.attempts(), savedPos);
+    setProgress(static_cast<int>(savedPos));
+    if (dynamic_cast<PlayerSeasonActivity*>(this)) {
+        this->requestSeasonVideoUrl(episodeResult.bvid, episodeResult.cid, false);
+    } else {
+        this->requestVideoUrl(videoDetailResult.bvid, videoDetailPage.cid, false);
+    }
 }
 
 void BasePlayerActivity::updateVideoLink() {
@@ -596,100 +641,21 @@ void BasePlayerActivity::onVideoPlayUrl(const bilibili::VideoUrlResult& result) 
     if (!result.dash.video.empty()) {
         // dash
         brls::Logger::debug("Video type: dash");
+        const wili::DashSelection selection = wili::selectDashTracks(
+            result, landscapeQualityMax, portraitQualityMax, BILI::VIDEO_CODEC, BILI::AUDIO_QUALITY);
+        videoUrlResult.quality = selection.selectedQuality;
 
-        // 找到当前可用的清晰度
-        for (const auto& i : result.dash.video) {
-            int desiredQuality = result.quality;
-            // 若设置了过高的清晰度, 自动切换到合适的清晰度, 默认为 128 (即无限制)
-            if (i.height > i.width) {
-                desiredQuality = std::min(desiredQuality, portraitQualityMax);
-            } else {
-                desiredQuality = std::min(desiredQuality, landscapeQualityMax);
-            }
-
-            if (desiredQuality >= i.id) {
-                videoUrlResult.quality = i.id;
-                break;
-            }
-        }
-
-        // 找到当前清晰度下可用的视频
-        std::vector<bilibili::DashMedia> codecs;
-        for (const auto& i : result.dash.video) {
-            if (i.id == videoUrlResult.quality) {
-                codecs.emplace_back(i);
-            }
-        }
-
-        // 匹配当前设定的视频编码
-        bilibili::DashMedia v = codecs[0];  // 默认是 AVC/H.264
-        for (const auto& i : codecs) {
-            if (BILI::VIDEO_CODEC == i.codecid) {
-                v = i;
-                break;
-            }
-        }
-
-        // 将主音频和备份音频链接合并，当作不同的音轨传给播放器，可以实现在播放失败时自动切换
-        std::vector<std::string> audios;
-        if (!result.dash.audio.empty()) {
-            // 选择音轨，支持杜比/无损优先和多级回退
-            auto pickDolby = [&]() -> std::optional<bilibili::DashMedia> {
-                if (result.dash.dolby_audio.empty()) return std::nullopt;
-                bilibili::DashMedia best = result.dash.dolby_audio[0];
-                for (auto& dm : result.dash.dolby_audio) if (dm.bandwidth > best.bandwidth) best = dm;
-                return best;
-            };
-            auto pickFlac = [&]() -> std::optional<bilibili::DashMedia> {
-                if (!result.dash.has_flac) return std::nullopt;
-                return result.dash.flac_audio;
-            };
-            auto pickStandard = [&](int qid) -> std::optional<bilibili::DashMedia> {
-                for (auto& i : result.dash.audio) if (i.id == qid) return i;
-                return std::nullopt;
-            };
-            auto pickFirstAvailableStandard = [&]() -> std::optional<bilibili::DashMedia> {
-                int candidates[] = {30280, 30232, 30216};
-                for (int q : candidates) {
-                    auto m = pickStandard(q);
-                    if (m) return m;
-                }
-                // fallback to first item if none matched
-                if (!result.dash.audio.empty()) return result.dash.audio[0];
-                return std::nullopt;
-            };
-
-            bilibili::DashMedia a = result.dash.audio[0];
-            bool selected = false;
-            if (BILI::AUDIO_QUALITY == 30250) {
-                // Dolby → Lossless → High → Medium → Low
-                if (auto m = pickDolby()) { a = *m; selected = true; brls::Logger::debug("Picked Dolby audio (type {}), bw {}", result.dash.dolby_type, a.bandwidth);} else
-                if (auto m = pickFlac()) { a = *m; selected = true; brls::Logger::debug("Picked FLAC audio, bw {}", a.bandwidth);} else
-                if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; }
-            } else if (BILI::AUDIO_QUALITY == 30251) {
-                // Lossless → Dolby → High → Medium → Low
-                if (auto m = pickFlac()) { a = *m; selected = true; brls::Logger::debug("Picked FLAC audio, bw {}", a.bandwidth);} else
-                if (auto m = pickDolby()) { a = *m; selected = true; brls::Logger::debug("Picked Dolby audio (type {}), bw {}", result.dash.dolby_type, a.bandwidth);} else
-                if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; }
-            } else {
-                // Try user-selected standard, then fallback High→Medium→Low
-                if (auto m = pickStandard(BILI::AUDIO_QUALITY)) { a = *m; selected = true; }
-                if (!selected) {
-                    if (auto m = pickFirstAvailableStandard()) { a = *m; selected = true; }
-                }
-            }
-            // 生成音频列表
-            audios.emplace_back(a.base_url);
-            audios.insert(audios.end(), a.backup_url.begin(), a.backup_url.end());
-            brls::Logger::debug("Dash quality: {}; video: {}; audio: {}", videoUrlResult.quality, v.codecid, a.id);
+        if (selection.hasAudio) {
+            brls::Logger::debug("Dash quality: {}; video: {}; audio: {}", videoUrlResult.quality,
+                                selection.video.codecid, selection.audio.id);
         }
 
         // 给播放器设置链接
-        this->video->setUrl(v.base_url, start, end, audios);
+        this->video->setUrl(selection.video.base_url, start, end, selection.audioUrls);
 
         // 设置备份视频链接
-        for (const auto& backup_url : v.backup_url) {
-            this->video->setBackupUrl(backup_url, start, end, audios);
+        for (const auto& backup_url : selection.video.backup_url) {
+            this->video->setBackupUrl(backup_url, start, end, selection.audioUrls);
         }
     } else {
         // flv
@@ -710,6 +676,7 @@ void BasePlayerActivity::onVideoPlayUrl(const bilibili::VideoUrlResult& result) 
 
     // 设置mpv事件
     // 1.更新清晰度
+    wili::PerfDiagnostics::instance().setSourceQn(videoUrlResult.quality);
     std::string quality = videoUrlResult.accept_description[getQualityIndex()];
     APP_E->fire(VideoView::SET_QUALITY, (void*)quality.c_str());
     // 2.绘制进度条标记点（例如：片头片尾）

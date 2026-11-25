@@ -50,8 +50,12 @@ struct GLShader {
     GLuint prog;
     GLuint vbo;
     GLuint ebo;
+    GLint alphaUniform = -1;
 #ifdef MPV_USE_VAO
     GLuint vao;
+#else
+    GLint posAttr      = -1;
+    GLint texCoordAttr = -1;
 #endif
 };
 #endif
