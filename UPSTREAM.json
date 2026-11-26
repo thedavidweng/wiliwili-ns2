@@ -79,9 +79,11 @@
     },
     "libounce": {
       "repository": "https://github.com/ouncebrew/libounce",
-      "commit": "32e7ac414ee1cd98922f66a059be5a85e99feea5",
+      "commit": "03af07a739a9a3b48704500cffcd6155692cc194",
+      "package_commit": "32e7ac414ee1cd98922f66a059be5a85e99feea5",
       "license": "ISC",
-      "version": "20261117.1-1"
+      "version": "20261117.1-1",
+      "note": "VideoDecoder (nx/include/switch2/video/decoder.h, nx/source/switch2/video/decoder.c) inspected at 03af07a7; identical VideoDecoder ABI in packaged 20261117.1-1 (32e7ac41)."
     },
     "ouncevk": {
       "repository": "https://github.com/ouncebrew/ouncevk",
@@ -103,8 +105,35 @@
     "mpv": {
       "repository": "https://github.com/mpv-player/mpv",
       "commit": "35efcf53d59470b3941e61a50c8a3133035a093d",
+      "inspected_tag": "v0.36.0",
       "issue": "https://github.com/mpv-player/mpv/issues/18343",
-      "note": "mpv's public render.h still has no merged caller-owned Vulkan render API, so the port keeps MPVCore's OpenGL/EGL framebuffer path."
+      "note": "vd_lavc.c (v0.36.0) exposes AV_CODEC_CAP_HARDWARE + wrapper_name=\"ounce\" as hwdec=ounce-copy without an mpv patch. mpv's public render.h still has no merged caller-owned Vulkan render API, so the port keeps MPVCore's OpenGL/EGL framebuffer path."
+    },
+    "mpv_build": {
+      "repository": "https://github.com/dragonflylee/mpv-build",
+      "branch": "switch",
+      "commit": "a04eb13eda5860b38d7a7cd738c10b0edbd0596f",
+      "note": "Authoritative Switch portlib recipe for FFmpeg 7.1.5 and libmpv 0.36.0."
+    },
+    "ffmpeg": {
+      "repository": "https://github.com/FFmpeg/FFmpeg",
+      "tag": "n7.1.5",
+      "note": "v4l2_m2m_dec.c, mediacodecdec.c, codec_internal.h, allcodecs.c inspected as primary templates for the Switch 2 FFmpeg ounce wrapper."
+    },
+    "kaivideo": {
+      "repository": "https://github.com/mizuiroame/kaivideo",
+      "commit": "129d0a3bed4f8793cbf99824a710ca5ddbfea19b",
+      "note": "Reference for VideoDecoder config, 1088 coded height, >1080p H.264/VP9 software routing (source/swframe.c), timestamps, and bounded copy."
+    },
+    "moonlight_switch": {
+      "repository": "https://github.com/XITRIX/Moonlight-Switch",
+      "commit": "841fc353aa5152df659aad4f6e1907d4ad3ba1d5",
+      "note": "Reference for native frame ownership, deferred retirement, and Stage 3 VK_EXT_external_memory_host + GSV GPU sharing (#22)."
+    },
+    "borealis_vulkan": {
+      "repository": "https://github.com/XITRIX/borealis",
+      "commit": "ecd896f068efe1899c09cf7b14ba548507fe7cec",
+      "note": "Native Vulkan Borealis backend reference for Stage 3 evaluation (#22)."
     },
     "nanovg_vulkan": {
       "repository": "https://github.com/ollix/nanovg-vulkan",
