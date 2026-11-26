@@ -34,3 +34,9 @@ android-project
 CLAUDE.md
 # Other AI
 AGENT.md
+# UWP build artifacts
+platform/uwp/borealis/
+platform/uwp/build/
+platform/uwp/x64-uwp-mpv.zip
+platform/uwp/libs/mpv/bin/
+platform/uwp/libs/mpv/lib/

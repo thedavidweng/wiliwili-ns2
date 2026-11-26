@@ -1,0 +1,24 @@
+{
+  "dependencies": [
+    "cpr",
+    {
+      "name": "curl",
+      "features": [
+        "ssl"
+      ]
+    },
+    "fmt",
+    "lunasvg",
+    "nayuki-qr-code-generator",
+    "pystring",
+    "tinyxml2",
+    "tweeny",
+    "cppwinrt",
+    {
+      "name": "directxtk",
+      "features": [
+        "xaudio2-9"
+      ]
+    }
+  ]
+}

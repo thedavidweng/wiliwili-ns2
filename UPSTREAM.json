@@ -185,5 +185,17 @@
       "egl_pkgconfig_version": "26.2.2",
       "notes": "OunceVK also installs empty libGLESv2.a, libglapi.a and libdrm_nouveau.a stubs in portlibs/switch2 so the Switch 1 copies in portlibs/switch can never be linked by mistake."
     }
+  },
+  "uwp_toolchain": {
+    "borealis_winrt": {
+      "repository": "https://github.com/thedavidweng/borealis",
+      "upstream_origin": "https://github.com/ikas-mc/borealis",
+      "branch": "winrt-dev",
+      "commit": "789b230cb4e50ff2098ae872a6bfe3f1d835f25b"
+    },
+    "mpv_uwp_prebuilt": {
+      "url": "https://github.com/ikas-mc/wiliwili-uwp-poc/releases/download/0.4/x64-uwp-mpv.zip",
+      "sha256": "82f8ce29700bf2c586d64c991f602b78c3e9a560c9094f07572db7f7e3ab7cef"
+    }
   }
 }
