@@ -133,15 +133,15 @@
     "portlibs": {
       "switch-dav1d": {
         "version": "1.5.5-1",
-        "sha256": "9bb587c3eba9a8c4bf9a9d6964942c357ac5065028546b2637437d00d0f485de"
+        "sha256": "e7614ec10b8d017379446bcdbf3e741becf14ae9a55c2cf5d5bba191f200f96b"
       },
       "switch-ffmpeg": {
         "version": "7.1.5-5",
-        "sha256": "91a447f55c905c11a1ac5bf33efd20ac90dcc1653e4f58b6a63df2b88b4b6a5f"
+        "sha256": "f79966b9fb75188393cc64da4d24a30500f46ebd991a8f373bc2fcafbf48032c"
       },
       "switch-libmpv": {
         "version": "0.36.0-2",
-        "sha256": "1630cc44d3e98e09ee28717fb7b5a45b5ed0ae8d81c04457b5647d40a12e97e4"
+        "sha256": "1af27369a6c19dcb0e53a6748914a18e12d780a85c6585e680035604065450cf"
       }
     },
     "devkitpro_packages": {

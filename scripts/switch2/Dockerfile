@@ -52,9 +52,9 @@ RUN dkp-pacman -Sy --noconfirm --needed \
 RUN set -eux; \
     cd /tmp; \
     for pinned in \
-        "switch-dav1d-1.5.5-1-any.pkg.tar.zst 9bb587c3eba9a8c4bf9a9d6964942c357ac5065028546b2637437d00d0f485de" \
-        "switch-ffmpeg-7.1.5-5-any.pkg.tar.zst 91a447f55c905c11a1ac5bf33efd20ac90dcc1653e4f58b6a63df2b88b4b6a5f" \
-        "switch-libmpv-0.36.0-2-any.pkg.tar.zst 1630cc44d3e98e09ee28717fb7b5a45b5ed0ae8d81c04457b5647d40a12e97e4"; \
+        "switch-dav1d-1.5.5-1-any.pkg.tar.zst e7614ec10b8d017379446bcdbf3e741becf14ae9a55c2cf5d5bba191f200f96b" \
+        "switch-ffmpeg-7.1.5-5-any.pkg.tar.zst f79966b9fb75188393cc64da4d24a30500f46ebd991a8f373bc2fcafbf48032c" \
+        "switch-libmpv-0.36.0-2-any.pkg.tar.zst 1af27369a6c19dcb0e53a6748914a18e12d780a85c6585e680035604065450cf"; \
     do \
         set -- ${pinned}; \
         curl -fsSLO "${SWITCH_PORTLIBS_URL}/$1"; \
