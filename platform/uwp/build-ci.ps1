@@ -133,8 +133,20 @@ if ($env:VERSION_BUILD_NUMBER) {
     $manifest.Save($appxManifestPath)
 }
 
-Write-Host "Running cmake..."
-& cmake --preset=uwp-release
+$cmakeArgs = @("--preset=uwp-release")
+$vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+if (Test-Path $vswhere) {
+    $vsVer = (& $vswhere -latest -products * -property installationVersion | Select-Object -First 1)
+    Write-Host "Detected Visual Studio installationVersion: $vsVer"
+    if ($vsVer -match '^18\.') {
+        $cmakeArgs += @("-G", "Visual Studio 18 2026")
+    } elseif ($vsVer -match '^17\.') {
+        $cmakeArgs += @("-G", "Visual Studio 17 2022")
+    }
+}
+
+Write-Host "Running cmake $($cmakeArgs -join ' ')..."
+& cmake @cmakeArgs
 if ($LASTEXITCODE -ne 0) { Write-Error "cmake failed"; exit 1 }
 
 Write-Host "Running msbuild..."
