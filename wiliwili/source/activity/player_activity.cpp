@@ -500,6 +500,7 @@ void PlayerActivity::onIndexChange(size_t index) {
     // 允许加载历史记录
     this->setProgress(0);
     this->video->setLastPlayedPosition(VideoView::POSITION_UNDEFINED);
+    MPVCore::instance().onNewPlaybackSession();
     // 请求视频链接
     this->requestVideoUrl(videoDetailResult.bvid, videoDetailPage.cid);
 }

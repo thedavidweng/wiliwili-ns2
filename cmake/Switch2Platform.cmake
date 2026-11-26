@@ -29,12 +29,27 @@ endif ()
 
 set(NX_ROOT "$ENV{DEVKITPRO}/libounce")
 set(OUNCE_PORTLIBS "$ENV{DEVKITPRO}/portlibs/switch2")
+set(DKP_INSTALL_PREFIX_INIT "${OUNCE_PORTLIBS}")
 
 # libounce and the Switch 2 portlibs first, the Switch 1 portlibs after them:
-# libs that only use the C library (SDL2, FFmpeg, mpv) still come from the
-# Switch 1 portlibs, while EGL, GLES, Vulkan, glapi and drm_nouveau resolve to
-# OunceVK's libs in $DEVKITPRO/portlibs/switch2.
+# libs that only use the C library (SDL2, webp, dav1d, curl, ass, ...) still
+# come from the Switch 1 portlibs, while FFmpeg, libmpv, EGL, GLES, Vulkan,
+# glapi and drm_nouveau resolve to $DEVKITPRO/portlibs/switch2.
 __dkp_platform_prefix("${OUNCE_PORTLIBS}" "${NX_ROOT}")
+
+# Borealis' Switch 1 branch runs Switch.cmake before project() loads
+# Switch2.cmake, caching Switch 1's pkg-config (whose PKG_CONFIG_LIBDIR skips
+# portlibs/switch2/) and libnx's default icon. Force both back to [ounce].
+if (NOT PKG_CONFIG_EXECUTABLE STREQUAL "${OUNCE_PORTLIBS}/bin/aarch64-none-elf-pkg-config")
+    unset(PKG_CONFIG_EXECUTABLE CACHE)
+    find_program(PKG_CONFIG_EXECUTABLE NAMES aarch64-none-elf-pkg-config
+            HINTS "${OUNCE_PORTLIBS}/bin" NO_DEFAULT_PATH)
+    if (NOT PKG_CONFIG_EXECUTABLE)
+        message(FATAL_ERROR "Could not find ${OUNCE_PORTLIBS}/bin/aarch64-none-elf-pkg-config")
+    endif ()
+endif ()
+unset(NX_DEFAULT_ICON CACHE)
+find_file(NX_DEFAULT_ICON NAMES default_icon.jpg HINTS "${NX_ROOT}" NO_CMAKE_FIND_ROOT_PATH)
 
 # Borealis' Switch 1 branch replaced these with the libnx include paths; drop
 # the override so the -D__SWITCH2__ and Cortex-A78C flags the toolchain put in

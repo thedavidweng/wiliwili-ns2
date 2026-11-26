@@ -376,6 +376,7 @@ void LiveActivity::onLiveData(const bilibili::LiveRoomPlayInfo &result)
 
         // 设置视频链接
         brls::Logger::debug("Live stream url: {}", url);
+        MPVCore::instance().onNewPlaybackSession();
         this->video->setUrl(url);
         return;
     }

@@ -199,11 +199,9 @@ std::unordered_map<SettingItem, ProgramOption> ProgramConfig::SETTING_MAP = {
     {SettingItem::PLAYER_HIGHLIGHT_BAR, {"player_highlight_bar", {}, {}, 0}},
     {SettingItem::PLAYER_SKIP_OPENING_CREDITS, {"player_skip_opening_credits", {}, {}, 1}},
     {SettingItem::PLAYER_LOW_QUALITY, {"player_low_quality", {}, {}, 1}},
-#if defined(IOS) || defined(__PSV__) || (defined(__SWITCH__) && !defined(__SWITCH2__))
+#if defined(IOS) || defined(__PSV__) || defined(__SWITCH__)
     {SettingItem::PLAYER_HWDEC, {"player_hwdec", {}, {}, 1}},
 #else
-    // The Switch 2 baseline decodes in software: the [ounce] stack has no mpv
-    // hardware decode backend yet.
     {SettingItem::PLAYER_HWDEC, {"player_hwdec", {}, {}, 0}},
 #endif
     {SettingItem::PLAYER_HWDEC_CUSTOM, {"player_hwdec_custom", {}, {}, 0}},

@@ -62,6 +62,7 @@ struct GLShader {
 #endif
 
 #include "utils/event_helper.hpp"
+#include "utils/switch2_hwdec_policy.hpp"
 
 #ifdef MPV_BUNDLE_DLL
 #include <MemoryModule.h>
@@ -304,6 +305,17 @@ public:
     void reset();
 
     /**
+     * Reset per-stream Switch 2 hwdec fallback latch when opening a new stream.
+     */
+    void onNewPlaybackSession();
+
+    bool isEffectiveHwdecEnabled() const;
+
+    void triggerOunceFallbackReopen(const char *reason);
+
+    const wili::OunceInitTelemetry &getOunceTelemetry() const { return ounceTelemetry; }
+
+    /**
      * 设置着色器配置
      * @param profile 配置名
      * @param shaders 着色器文件
@@ -369,9 +381,9 @@ public:
 
     // 硬解方式
 #if defined(__SWITCH2__)
-    // No mpv hardware decode backend for the [ounce] Vulkan stack: the Switch 2
-    // baseline is software decoding.
-    inline static std::string PLAYER_HWDEC_METHOD = "no";
+    // Stage 1 Switch 2 H.264 8-bit <=1080p60 hardware decode wrapper (FFmpeg
+    // h264_ounce -> mpv hwdec=ounce-copy). Unqualified streams stay in software.
+    inline static std::string PLAYER_HWDEC_METHOD = "ounce-copy";
 #elif defined(__SWITCH__) || defined(BOREALIS_USE_GXM)
     inline static std::string PLAYER_HWDEC_METHOD = "auto";
 #elif defined(__PSV__)
@@ -526,4 +538,15 @@ private:
     static void on_update(void *self);
 
     static void on_wakeup(void *self);
+
+    wili::OunceSessionWatchdog ounceWatchdog;
+    wili::OunceInitTelemetry ounceTelemetry;
+    std::string activeLoadUrl;
+    std::string activeLoadExtra;
+#ifdef __SWITCH2__
+    bool ounceFallbackReopenInProgress = false;
+    bool sawLoadDuringRestart        = false;
+#endif
+    bool pausedForCacheState           = false;
+    int64_t lastWatchdogCheckUs        = 0;
 };

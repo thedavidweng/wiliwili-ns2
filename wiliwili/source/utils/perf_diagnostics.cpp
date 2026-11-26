@@ -100,6 +100,21 @@ void PerfDiagnostics::updatePlaybackMetadata(int sourceQn, int decodedWidth, int
     outputDrops_      = outputDrops;
 }
 
+void PerfDiagnostics::setPipelineTelemetry(const std::string& decodePath, const std::string& frameTransferPath,
+                                           const std::string& gpuRenderBackend,
+                                           const std::string& presentationPacing) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    decodePath_         = decodePath.empty() ? "software" : decodePath;
+    frameTransferPath_  = frameTransferPath.empty() ? "sw-decode" : frameTransferPath;
+    gpuRenderBackend_   = gpuRenderBackend.empty() ? "GLES3 FBO" : gpuRenderBackend;
+    presentationPacing_ = presentationPacing.empty() ? "FIFO blk=0" : presentationPacing;
+}
+
+void PerfDiagnostics::setOunceInitTelemetry(const OunceInitTelemetry& init) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    ounceInit_ = init;
+}
+
 void PerfDiagnostics::resetSamples() {
     std::lock_guard<std::mutex> lock(mutex_);
     uiFrames_.clear();
@@ -151,6 +166,11 @@ PerfSnapshot PerfDiagnostics::snapshot() {
     snap.docked            = docked_;
     snap.decoderName       = decoderName_;
     snap.transferMode      = transferMode_;
+    snap.decodePath        = decodePath_;
+    snap.frameTransferPath = frameTransferPath_;
+    snap.gpuRenderBackend  = gpuRenderBackend_;
+    snap.presentationPacing = presentationPacing_;
+    snap.ounceInit         = ounceInit_;
     snap.avsyncSec         = avsyncSec_;
     snap.cacheDurationSec  = cacheDurationSec_;
     snap.cacheInputRateMBps = cacheRateMBps_;
@@ -165,19 +185,35 @@ PerfSnapshot PerfDiagnostics::snapshot() {
 }
 
 std::string PerfDiagnostics::formatSanitizedSummary(const PerfSnapshot& snap) {
-    return fmt::format(
+    std::string out = fmt::format(
         "ui_fps={:.1f} ui_p50_ms={:.2f} ui_p95_ms={:.2f} ui_p99_ms={:.2f} missed={} delayed={} "
         "video_p50_ms={:.2f} video_p95_ms={:.2f} video_p99_ms={:.2f} "
         "source_qn={} decoded={}x{} render={}x{} output={}x{}{} refresh={}Hz{} "
-        "decoder={} transfer={} avsync_ms={:.2f} cache_sec={:.1f} cache_rate_mbps={:.2f} "
+        "decoder={} transfer={} decode_path={} frame_transfer={} render_backend={} pacing={} "
+        "avsync_ms={:.2f} cache_sec={:.1f} cache_rate_mbps={:.2f} "
         "drop_dec={} drop_out={} mem_mb={:.1f} peak_mem_mb={:.1f} startup_ms={} player_open_ms={}",
         snap.ui.fps, snap.ui.p50Us / 1000.0, snap.ui.p95Us / 1000.0, snap.ui.p99Us / 1000.0, snap.ui.missedFrames,
         snap.ui.delayedFrames, snap.videoRender.p50Us / 1000.0, snap.videoRender.p95Us / 1000.0,
         snap.videoRender.p99Us / 1000.0, snap.sourceQn, snap.decodedWidth, snap.decodedHeight, snap.renderWidth,
         snap.renderHeight, snap.outputWidth, snap.outputHeight, snap.docked ? "_docked" : "_handheld",
-        snap.nominalRefreshHz, snap.vrr ? "_vrr" : "", snap.decoderName, snap.transferMode, snap.avsyncSec * 1000.0,
+        snap.nominalRefreshHz, snap.vrr ? "_vrr" : "", snap.decoderName, snap.transferMode, snap.decodePath,
+        snap.frameTransferPath, snap.gpuRenderBackend, snap.presentationPacing, snap.avsyncSec * 1000.0,
         snap.cacheDurationSec, snap.cacheInputRateMBps, snap.decoderDrops, snap.outputDrops,
         snap.currentMemoryKb / 1024.0, snap.peakMemoryKb / 1024.0, snap.startupMs, snap.playerOpenMs);
+    if (snap.ounceInit.seen) {
+        out += fmt::format(
+            " viddec_ok={} viddec_rc=0x{:x} viddec_coded={}x{} viddec_vis={}x{} viddec_1088={} "
+            "viddec_tiling={} viddec_pool={} viddec_work_mib={:.1f} viddec_img_kb={:.1f} viddec_cfg={}",
+            snap.ounceInit.initOk ? 1 : 0, snap.ounceInit.rc, snap.ounceInit.codedWidth, snap.ounceInit.codedHeight,
+            snap.ounceInit.visibleWidth, snap.ounceInit.visibleHeight, snap.ounceInit.tier1088Triggered ? 1 : 0,
+            snap.ounceInit.tilingMode, snap.ounceInit.imageCount,
+            snap.ounceInit.workSizeBytes / (1024.0 * 1024.0), snap.ounceInit.imageBackingBytes / 1024.0,
+            snap.ounceInit.codecConfigBytes);
+        if (!snap.ounceInit.rejectReason.empty()) {
+            out += fmt::format(" viddec_reject={}", snap.ounceInit.rejectReason);
+        }
+    }
+    return out;
 }
 
 }  // namespace wili

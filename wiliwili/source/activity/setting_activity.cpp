@@ -596,7 +596,7 @@ void SettingActivity::onContentAvailable() {
     const std::vector<std::string> codecLabels = {
         "AVC/H.264 (" + "wiliwili/setting/app/playback/codec_ns2_recommended"_i18n + ")",
         "HEVC/H.265 (" + "wiliwili/setting/app/playback/codec_ns2_sw_only"_i18n + ")",
-        "AV1 (" + "wiliwili/setting/app/playback/codec_ns2_hw_capable"_i18n + ")",
+        "AV1 (" + "wiliwili/setting/app/playback/codec_ns2_sw_only"_i18n + ")",
     };
 #else
     const std::vector<std::string>& codecLabels = codecOption.optionList;
@@ -733,7 +733,7 @@ void SettingActivity::onContentAvailable() {
         wiliwili_proxy_is_sensitive(httpProxy.c_str()) ? KEYBOARD_SENSITIVE_INPUT : 0);
 
 /// Hardware decode
-#if defined(PS4) || defined(__SWITCH2__) || (defined(__PSV__) && defined(BOREALIS_USE_OPENGL))
+#if defined(PS4) || (defined(__PSV__) && defined(BOREALIS_USE_OPENGL))
     btnHWDEC->setVisibility(brls::Visibility::GONE);
 #else
     btnHWDEC->init("wiliwili/setting/app/playback/hwdec"_i18n, conf.getBoolOption(SettingItem::PLAYER_HWDEC),
@@ -741,6 +741,7 @@ void SettingActivity::onContentAvailable() {
                        ProgramConfig::instance().setSettingItem(SettingItem::PLAYER_HWDEC, value);
                        if (MPVCore::HARDWARE_DEC == value) return;
                        MPVCore::HARDWARE_DEC = value;
+                       MPVCore::instance().onNewPlaybackSession();
                        MPVCore::instance().restart();
                    });
 #endif

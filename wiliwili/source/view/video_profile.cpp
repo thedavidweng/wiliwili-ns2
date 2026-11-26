@@ -8,6 +8,7 @@
 #include "view/video_profile.hpp"
 #include "view/mpv_core.hpp"
 #include "utils/perf_diagnostics.hpp"
+#include "utils/switch2_hwdec_policy.hpp"
 
 VideoProfile::VideoProfile() {
     this->inflateFromXMLRes("xml/views/video_profile.xml");
@@ -45,22 +46,30 @@ void VideoProfile::update() {
     const int64_t outDrops   = mpvCore->getInt("frame-drop-count");
     const double avsync      = mpvCore->getDouble("avsync");
 
+    const wili::HwdecTransferPath xferPath = wili::classifyTransferPath(hwdec);
+    const std::string transferPathName     = wili::hwdecTransferPathName(xferPath);
+    const std::string decodePathName       = hwdec.empty() || hwdec == "no" ? "sw" : hwdec;
+#if defined(MPV_SW_RENDER)
+    const std::string renderBackend = "SW";
+#elif defined(MPV_NO_FB)
+    const std::string renderBackend = "NO_FB";
+#elif defined(__SWITCH2__) && defined(USE_GLES3)
+    const std::string renderBackend = "Zink/GLES3-FBO";
+#elif defined(USE_GLES3)
+    const std::string renderBackend = "GLES3-FBO";
+#else
+    const std::string renderBackend = "GL-FBO";
+#endif
+    const std::string pacingName = "FIFO-blk0";
+
     auto& perf = wili::PerfDiagnostics::instance();
+    perf.setPipelineTelemetry(decodePathName, transferPathName, renderBackend, pacingName);
     if (perf.isEnabled()) {
         const wili::PerfSnapshot current = perf.snapshot();
         const int outW = current.outputWidth > 0 ? current.outputWidth : renderW;
         const int outH = current.outputHeight > 0 ? current.outputHeight : renderH;
-#if defined(MPV_SW_RENDER)
-        const std::string transferMode = "SW";
-#elif defined(MPV_NO_FB)
-        const std::string transferMode = "NO_FB";
-#elif defined(USE_GLES3)
-        const std::string transferMode = "GLES3 FBO";
-#else
-        const std::string transferMode = "GL FBO";
-#endif
         perf.updatePlaybackMetadata(current.sourceQn, decodedW, decodedH, renderW, renderH, outW, outH, current.docked,
-                                    hwdec.empty() ? "software" : hwdec, transferMode, avsync, cacheDuration,
+                                    hwdec.empty() ? "software" : hwdec, renderBackend, avsync, cacheDuration,
                                     cacheRateMBps, decDrops, outDrops);
     }
 
@@ -73,7 +82,8 @@ void VideoProfile::update() {
         brls::Application::contentHeight));
     labelVideoCodec->setText(mpvCore->getString("video-codec"));
     labelVideoPixel->setText(mpvCore->getString("video-params/pixelformat"));
-    labelVideoHW->setText(fmt::format("{} ({})", hwdec.empty() ? "no" : hwdec, snap.transferMode));
+    labelVideoHW->setText(fmt::format("{} | {} | {} | {}", hwdec.empty() ? "no(sw)" : hwdec, snap.frameTransferPath,
+                                      snap.gpuRenderBackend, snap.presentationPacing));
     labelVideoBitrate->setText(std::to_string(mpvCore->getInt("video-bitrate") / 1024) + "kbps");
     if (perf.isEnabled() && snap.ui.count > 0) {
         labelVideoDrop->setText(fmt::format("{} (dec) {} (out) | p50/p95/p99 {:.1f}/{:.1f}/{:.1f}ms miss {}",

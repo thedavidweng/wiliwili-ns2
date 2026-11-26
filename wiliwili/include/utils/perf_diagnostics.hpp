@@ -8,6 +8,8 @@
 #include <mutex>
 #include <string>
 
+#include "utils/switch2_hwdec_policy.hpp"
+
 namespace wili {
 
 // Fixed-capacity frame interval ring buffer. Zero heap allocations on record().
@@ -97,6 +99,11 @@ struct PerfSnapshot {
     bool vrr                   = false;
     std::string decoderName    = "software";
     std::string transferMode   = "GLES3 FBO";
+    std::string decodePath     = "software";
+    std::string frameTransferPath = "sw-decode";
+    std::string gpuRenderBackend  = "GLES3 FBO";
+    std::string presentationPacing = "FIFO blk=0";
+    OunceInitTelemetry ounceInit{};
     double avsyncSec           = 0.0;
     double cacheDurationSec    = 0.0;
     double cacheInputRateMBps  = 0.0;
@@ -133,6 +140,9 @@ public:
                                 int outputWidth, int outputHeight, bool docked, const std::string& decoderName,
                                 const std::string& transferMode, double avsyncSec, double cacheDurationSec,
                                 double cacheInputRateMBps, int64_t decoderDrops, int64_t outputDrops);
+    void setPipelineTelemetry(const std::string& decodePath, const std::string& frameTransferPath,
+                              const std::string& gpuRenderBackend, const std::string& presentationPacing);
+    void setOunceInitTelemetry(const OunceInitTelemetry& init);
 
     void resetSamples();
     PerfSnapshot snapshot();
@@ -161,6 +171,11 @@ private:
     bool docked_              = false;
     std::string decoderName_  = "software";
     std::string transferMode_ = "GLES3 FBO";
+    std::string decodePath_         = "software";
+    std::string frameTransferPath_  = "sw-decode";
+    std::string gpuRenderBackend_   = "GLES3 FBO";
+    std::string presentationPacing_ = "FIFO blk=0";
+    OunceInitTelemetry ounceInit_{};
     double avsyncSec_         = 0.0;
     double cacheDurationSec_  = 0.0;
     double cacheRateMBps_     = 0.0;

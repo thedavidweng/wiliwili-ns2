@@ -111,12 +111,29 @@ else
     fail "$elf has no symbol table"
 fi
 
-# 3. The link: libnx API from libounce, EGL/GLES from OunceVK, nothing from
-#    Switch 1's libnx or GPU portlibs.
+# 3. The link: libnx API from libounce, EGL/GLES from OunceVK, FFmpeg+libmpv
+#    from portlibs/switch2 (with h264_ounce backed by libounce VideoDecoder),
+#    and nothing from Switch 1's libnx or GPU portlibs.
 if grep -q '/libounce/lib/libnx\.a' "$map"; then
     ok "libnx API comes from libounce"
 else
     fail "$map does not link /opt/devkitpro/libounce/lib/libnx.a"
+fi
+
+if grep -q '/portlibs/switch2/lib/libavcodec\.a' "$map" && grep -q '/portlibs/switch2/lib/libmpv\.a' "$map"; then
+    ok "FFmpeg and libmpv come from portlibs/switch2"
+else
+    fail "$map does not link FFmpeg and libmpv from /opt/devkitpro/portlibs/switch2/lib/"
+fi
+
+objdump="${readelf%readelf}objdump"
+nm_bin="${readelf%readelf}nm"
+if [ -x "$nm_bin" ]; then
+    if "$nm_bin" "$elf" | grep -q ' ff_h264_ounce_decoder$' && "$nm_bin" "$elf" | grep -q ' videoDecoderCreate$'; then
+        ok "ELF links ff_h264_ounce_decoder and libounce videoDecoderCreate"
+    else
+        fail "$elf is missing ff_h264_ounce_decoder or videoDecoderCreate"
+    fi
 fi
 
 if grep -q 'libouncevk-gl\.a' "$map"; then
@@ -131,8 +148,6 @@ else
     fail "$map does not wrap cpu_features_get_time_usec"
 fi
 
-objdump="${readelf%readelf}objdump"
-nm_bin="${readelf%readelf}nm"
 if [ -x "$objdump" ] && [ -x "$nm_bin" ]; then
     mpv_ctor="$("$nm_bin" "$elf" | awk '/ _ZN7MPVCoreC1Ev$/{print $1; exit}')"
     if [ -n "$mpv_ctor" ] && "$objdump" -d --start-address="0x$mpv_ctor" --stop-address="$((0x$mpv_ctor + 0x180))" "$elf" | grep -Eq 'mov[[:space:]]+w[0-9]+, #0xc([[:space:]]|$)'; then
@@ -155,17 +170,15 @@ else
     ok "no deko3d"
 fi
 
-# nvtegra and the NVIDIA user mode driver are Switch 1's GPU libraries, linked
-# from libnx on a deko3d build. The pinned Switch FFmpeg carries its own nvtegra
-# hwaccel objects (libavcodec.a(nvtegra_*.o)), which is a codec wrapper inside
-# that FFmpeg build rather than a GPU library: nothing here may link the driver
-# itself.
-switch1_nv="$(grep -oE 'lib(nvtegra|nvidia|nvdrv)\.a' "$map" | sort -u)"
+# nvtegra and the NVIDIA user mode driver are Switch 1's GPU/video libraries;
+# Switch 2 builds FFmpeg with --disable-nvtegra and --enable-ounce, so neither
+# nvtegra libraries nor nvtegra FFmpeg objects may appear in the link map.
+switch1_nv="$(grep -oE 'lib(nvtegra|nvidia|nvdrv)\.a|nvtegra_[a-z0-9_]+\.o' "$map" | sort -u)"
 if [ -n "$switch1_nv" ]; then
-    fail "Switch 1 NVIDIA libraries in the link map:"
+    fail "Switch 1 NVIDIA/nvtegra objects in the link map:"
     echo "$switch1_nv" | sed 's/^/      /'
 else
-    ok "no nvtegra, nvidia or nvdrv libraries"
+    ok "no nvtegra, nvidia or nvdrv libraries or objects"
 fi
 
 switch1_gpu="$(grep -oE '/opt/devkitpro/portlibs/switch/lib/lib(EGL|GLESv2|glapi|drm_nouveau|vulkan)\.a' "$map" | sort -u)"

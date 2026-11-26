@@ -122,3 +122,24 @@ target_link_libraries(wiliwili_bilibili_api_test PRIVATE cpr::cpr pystring fmt)
 target_compile_definitions(wiliwili_bilibili_api_test PRIVATE
         WILIWILI_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 add_test(NAME bilibili_api COMMAND wiliwili_bilibili_api_test)
+
+# Stage 1 H.264 Ounce FFmpeg decoder wrapper (scripts/switch2/ffmpeg/ounce_dec.c),
+# eligibility policy, stall-hardened fallback watchdog, and telemetry checks (#14).
+add_executable(wiliwili_switch2_ounce_test
+        switch2_ounce_test.cpp
+        ${PROJECT_SOURCE_DIR}/scripts/switch2/ffmpeg/ounce_dec.c
+        ${PROJECT_SOURCE_DIR}/wiliwili/source/utils/perf_diagnostics.cpp)
+set_target_properties(wiliwili_switch2_ounce_test PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON)
+target_include_directories(wiliwili_switch2_ounce_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/mocks/ounce_host
+        ${PROJECT_SOURCE_DIR}/wiliwili/include
+        ${BOREALIS_LIBRARY}/include
+        ${BOREALIS_LIBRARY}/include/borealis/extern)
+target_link_libraries(wiliwili_switch2_ounce_test PRIVATE fmt)
+target_compile_definitions(wiliwili_switch2_ounce_test PRIVATE
+        WILIWILI_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+add_test(NAME switch2_ounce COMMAND wiliwili_switch2_ounce_test)

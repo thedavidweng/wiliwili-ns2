@@ -371,12 +371,28 @@ void MPVCore::init() {
     }
 
     // hardware decoding
+#ifdef __SWITCH2__
+    if (this->isEffectiveHwdecEnabled()) {
+        if (PLAYER_HWDEC_METHOD.empty() || PLAYER_HWDEC_METHOD == "no" || PLAYER_HWDEC_METHOD == "auto-safe") {
+            PLAYER_HWDEC_METHOD = "ounce-copy";
+        }
+        mpvSetOptionString(mpv, "hwdec", PLAYER_HWDEC_METHOD.c_str());
+        mpvSetOptionString(mpv, "vd-lavc-software-fallback", "1");
+        brls::Logger::info("MPV hardware decode: {}", PLAYER_HWDEC_METHOD);
+    } else {
+        mpvSetOptionString(mpv, "hwdec", "no");
+        brls::Logger::info("MPV hardware decode: no{}",
+                           ounceWatchdog.isSwFallbackLatched() ? " (session SW fallback latched)" : "");
+    }
+    mpv_request_log_messages(mpv, "info");
+#else
     if (HARDWARE_DEC) {
         mpvSetOptionString(mpv, "hwdec", PLAYER_HWDEC_METHOD.c_str());
         brls::Logger::info("MPV hardware decode: {}", PLAYER_HWDEC_METHOD);
     } else {
         mpvSetOptionString(mpv, "hwdec", "no");
     }
+#endif
 
     // Making the loading process faster (Switch 1 drm_nouveau only: on Switch 2's
     // OunceVK Zink stack, opengl-glfinish stalls the main UI thread on vkWaitForFences
@@ -578,6 +594,67 @@ void MPVCore::clean() {
         mpvTerminateDestroy(this->mpv);
         this->mpv = nullptr;
     }
+}
+
+void MPVCore::onNewPlaybackSession() {
+    ounceWatchdog.onNewStream();
+    ounceTelemetry      = wili::OunceInitTelemetry{};
+    pausedForCacheState = false;
+    lastWatchdogCheckUs = 0;
+    wili::PerfDiagnostics::instance().setOunceInitTelemetry(ounceTelemetry);
+    (void)pausedForCacheState;
+    (void)lastWatchdogCheckUs;
+}
+
+bool MPVCore::isEffectiveHwdecEnabled() const {
+#ifdef __SWITCH2__
+    return HARDWARE_DEC && !ounceWatchdog.isSwFallbackLatched();
+#else
+    return HARDWARE_DEC;
+#endif
+}
+
+void MPVCore::triggerOunceFallbackReopen(const char *reason) {
+#ifdef __SWITCH2__
+    if (ounceFallbackReopenInProgress) return;
+    ounceFallbackReopenInProgress = true;
+
+    wili::OunceSessionWatchdog::SavedPlaybackState saved;
+    saved.positionSec = std::max<int64_t>(0, video_progress > 0 ? video_progress
+                                                                : static_cast<int64_t>(playback_time));
+    saved.speed       = video_speed;
+    saved.wasPaused   = video_paused;
+    if (mpv) {
+        saved.aid = getString("aid");
+        saved.sid = getString("sid");
+    }
+
+    ounceWatchdog.armFallbackReopen(saved);
+    brls::Logger::warning("[switch2-hwdec] fallback->sw reason={} pos={}s speed={:.2f} aid={} sid={}",
+                          reason ? reason : "unknown", saved.positionSec, saved.speed, saved.aid, saved.sid);
+    wili::bootNote("viddec", fmt::format("fallback_sw reason={} pos={}s aid={} sid={}", reason ? reason : "unknown",
+                                         saved.positionSec, saved.aid, saved.sid));
+
+    const bool prevAutoPlay = AUTO_PLAY;
+    AUTO_PLAY               = !saved.wasPaused;
+    sawLoadDuringRestart    = false;
+
+    this->restart();
+
+    if (!sawLoadDuringRestart && !activeLoadUrl.empty()) {
+        std::string extra = activeLoadExtra;
+        if (saved.positionSec > 0 && extra.find("start=") == std::string::npos) {
+            if (!extra.empty()) extra += ",";
+            extra += fmt::format("start={}", saved.positionSec);
+        }
+        this->setUrl(activeLoadUrl, extra);
+    }
+
+    AUTO_PLAY                     = prevAutoPlay;
+    ounceFallbackReopenInProgress = false;
+#else
+    (void)reason;
+#endif
 }
 
 void MPVCore::restart() {
@@ -807,6 +884,21 @@ bool MPVCore::isValid() { return mpv_context != nullptr; }
 
 void MPVCore::draw(brls::Rect area, float alpha) {
     if (mpv_context == nullptr) return;
+#ifdef __SWITCH2__
+    if (!ounceWatchdog.isSwFallbackLatched() && ounceWatchdog.isHwActive()) {
+        const int64_t nowUs = brls::getCPUTimeUsec();
+        if (lastWatchdogCheckUs == 0 || nowUs - lastWatchdogCheckUs >= 500000) {
+            lastWatchdogCheckUs = nowUs;
+            const double curTime   = getDouble("playback-time");
+            const int64_t curFrame = getInt("estimated-frame-number");
+            if (ounceWatchdog.onPlaybackSample(curTime, curFrame, video_paused, video_seeking, pausedForCacheState,
+                                               video_eof, nowUs) ==
+                wili::OunceSessionWatchdog::Action::FallbackToSoftware) {
+                brls::sync([this]() { this->triggerOunceFallbackReopen("watchdog_no_progress"); });
+            }
+        }
+    }
+#endif
     if (!(this->rect == area)) setFrameSize(area);
 
 #ifdef MPV_SW_RENDER
@@ -931,13 +1023,33 @@ std::string MPVCore::getCacheSpeed() const {
 }
 
 void MPVCore::eventMainLoop() {
+    bool deferredFallback      = false;
+    const char *fallbackReason = nullptr;
     while (true) {
         auto event = mpvWaitEvent(this->mpv, 0);
         switch (event->event_id) {
             case MPV_EVENT_NONE:
+                if (deferredFallback && fallbackReason) {
+                    this->triggerOunceFallbackReopen(fallbackReason);
+                }
                 return;
             case MPV_EVENT_LOG_MESSAGE: {
                 auto log = (mpv_event_log_message *)event->data;
+#ifdef __SWITCH2__
+                if (log->text) {
+                    bool isRuntimeErr = false;
+                    bool isIneligible = false;
+                    if (wili::parseOunceLogLine(log->text, ounceTelemetry, isRuntimeErr, isIneligible)) {
+                        wili::PerfDiagnostics::instance().setOunceInitTelemetry(ounceTelemetry);
+                        wili::bootNote("viddec", log->text);
+                        if (isRuntimeErr && ounceWatchdog.onHwRuntimeError() ==
+                                                wili::OunceSessionWatchdog::Action::FallbackToSoftware) {
+                            deferredFallback = true;
+                            fallbackReason   = "ounce_runtime_error";
+                        }
+                    }
+                }
+#endif
                 if (log->log_level <= MPV_LOG_LEVEL_ERROR) {
                     brls::Logger::error("{}: {}", log->prefix, log->text);
                 } else if (log->log_level <= MPV_LOG_LEVEL_WARN) {
@@ -949,14 +1061,66 @@ void MPVCore::eventMainLoop() {
                 } else {
                     brls::Logger::verbose("{}: {}", log->prefix, log->text);
                 }
+                if (deferredFallback) goto after_event_loop;
             } break;
-            case MPV_EVENT_FILE_LOADED:
+            case MPV_EVENT_FILE_LOADED: {
                 brls::Logger::info("========> MPV_EVENT_FILE_LOADED");
 #ifdef __SWITCH2__
+                {
+                    const std::string curHwdec = getString("hwdec-current");
+                    ounceWatchdog.onHwdecSelected(curHwdec);
+                    const auto transferPath = wili::classifyTransferPath(curHwdec);
+                    wili::PerfDiagnostics::instance().setPipelineTelemetry(
+                        curHwdec.empty() || curHwdec == "no" ? "software" : curHwdec,
+                        wili::hwdecTransferPathName(transferPath), "Zink/GLES3-FBO", "FIFO-blk0");
+
+                    if (curHwdec == "ounce-copy" || curHwdec == "h264_ounce-copy") {
+                        wili::StreamEligibilityQuery eq;
+                        eq.codecName = getString("video-format");
+                        if (eq.codecName.empty()) eq.codecName = getString("video-codec");
+                        eq.width       = static_cast<int>(getInt("video-params/w"));
+                        eq.height      = static_cast<int>(getInt("video-params/h"));
+                        eq.pixelFormat = getString("video-params/pixelformat");
+                        eq.fps         = getDouble("container-fps");
+                        const auto decision =
+                            wili::evaluateOunceEligibility(eq, HARDWARE_DEC, ounceWatchdog.isSwFallbackLatched());
+                        if (!decision.useHardware) {
+                            brls::Logger::warning(
+                                "[switch2-hwdec] post-load ineligible ({}) codec={} pix={} {}x{} -> fallback SW",
+                                decision.reason, eq.codecName, eq.pixelFormat, eq.width, eq.height);
+                            wili::bootNote("viddec", fmt::format("post_load_ineligible={} codec={} pix={} {}x{}",
+                                                                 decision.reason, eq.codecName, eq.pixelFormat,
+                                                                 eq.width, eq.height));
+                            if (ounceWatchdog.onHwRuntimeError() ==
+                                wili::OunceSessionWatchdog::Action::FallbackToSoftware) {
+                                deferredFallback = true;
+                                fallbackReason   = "post_load_ineligible";
+                                goto after_event_loop;
+                            }
+                        }
+                    }
+
+                    wili::OunceSessionWatchdog::SavedPlaybackState saved;
+                    if (ounceWatchdog.consumeRestoreState(saved)) {
+                        if (saved.positionSec > 0 && static_cast<int64_t>(getDouble("playback-time")) < saved.positionSec - 2) {
+                            this->seek(saved.positionSec);
+                        }
+                        if (saved.speed > 0.1 && std::abs(saved.speed - 1.0) > 1e-4) {
+                            this->setSpeed(saved.speed);
+                        }
+                        if (!saved.aid.empty() && saved.aid != "auto" && saved.aid != "no") {
+                            command_async("set", "aid", saved.aid);
+                        }
+                        if (!saved.sid.empty() && saved.sid != "auto") {
+                            command_async("set", "sid", saved.sid);
+                        }
+                    }
+                }
                 if (wili::PerfDiagnostics::instance().isEnabled()) {
                     wili::PerfDiagnostics::instance().resetSamples();
-                    wili::bootNote("video", fmt::format("loaded fmt={} dec={} pix={} {}x{}@{} cache={}MB",
+                    wili::bootNote("video", fmt::format("loaded fmt={} dec={} hw={} pix={} {}x{}@{} cache={}MB",
                                                         getString("file-format"), getString("video-codec"),
+                                                        getString("hwdec-current"),
                                                         getString("video-params/pixelformat"), getInt("video-params/w"),
                                                         getInt("video-params/h"), getInt("container-fps"),
                                                         MPVCore::INMEMORY_CACHE));
@@ -978,6 +1142,7 @@ void MPVCore::eventMainLoop() {
                     this->pause();
                 }
                 break;
+            }
             case MPV_EVENT_START_FILE:
                 // event 6: 开始加载文件
                 brls::Logger::info("========> MPV_EVENT_START_FILE");
@@ -1008,6 +1173,14 @@ void MPVCore::eventMainLoop() {
                 if (node->reason == MPV_END_FILE_REASON_ERROR) {
                     mpv_error_code = node->error;
                     brls::Logger::error("========> MPV ERROR: {}", mpvErrorString(node->error));
+#ifdef __SWITCH2__
+                    if (ounceWatchdog.onStreamFailure(false, video_progress, duration) ==
+                        wili::OunceSessionWatchdog::Action::FallbackToSoftware) {
+                        deferredFallback = true;
+                        fallbackReason   = "mpv_end_file_error";
+                        goto after_event_loop;
+                    }
+#endif
                     mpvCoreEvent.fire(MpvEventEnum::MPV_FILE_ERROR);
                 }
 #ifdef BOREALIS_USE_GXM
@@ -1039,6 +1212,14 @@ void MPVCore::eventMainLoop() {
                         // 避免多次触发 EOF，将第二种情况排除在外
                         if (video_eof && !video_stopped) {
                             brls::Logger::info("========> END OF FILE");
+#ifdef __SWITCH2__
+                            if (ounceWatchdog.onStreamFailure(true, video_progress, duration) ==
+                                wili::OunceSessionWatchdog::Action::FallbackToSoftware) {
+                                deferredFallback = true;
+                                fallbackReason   = "premature_eof_hw";
+                                goto after_event_loop;
+                            }
+#endif
                             mpvCoreEvent.fire(MpvEventEnum::END_OF_FILE);
                         }
                         break;
@@ -1055,11 +1236,19 @@ void MPVCore::eventMainLoop() {
                         // 播放进度更新
                         if (((mpv_event_property *)event->data)->data) {
                             playback_time = *(double *)((mpv_event_property *)event->data)->data;
+#ifdef __SWITCH2__
+                            ounceWatchdog.onPlaybackSample(playback_time, -1, video_paused, video_seeking,
+                                                           pausedForCacheState, video_eof, brls::getCPUTimeUsec());
+#endif
                             if (video_progress != (int64_t)playback_time) {
                                 video_progress = (int64_t)playback_time;
                                 mpvCoreEvent.fire(MpvEventEnum::UPDATE_PROGRESS);
 #ifdef __SWITCH2__
                                 auto &perf = wili::PerfDiagnostics::instance();
+                                const std::string curHwdec = getString("hwdec-current");
+                                const std::string decLabel = curHwdec.empty() || curHwdec == "no" ? "software" : curHwdec;
+                                const std::string xferLabel = wili::hwdecTransferPathName(wili::classifyTransferPath(curHwdec));
+                                perf.setPipelineTelemetry(decLabel, xferLabel, "Zink/GLES3-FBO", "FIFO-blk0");
                                 if (perf.isEnabled() &&
                                     (video_progress == 1 || video_progress == 2 || video_progress == 5 ||
                                      (video_progress > 5 && video_progress % 10 == 0))) {
@@ -1073,7 +1262,7 @@ void MPVCore::eventMainLoop() {
                                                                 : static_cast<int>(brls::Application::windowWidth),
                                         current.outputHeight > 0 ? current.outputHeight
                                                                  : static_cast<int>(brls::Application::windowHeight),
-                                        current.docked, "software", "GLES3 FBO", getDouble("avsync"),
+                                        current.docked, decLabel, "Zink/GLES3-FBO", getDouble("avsync"),
                                         getDouble("demuxer-cache-duration"), 0.0, getInt("decoder-frame-drop-count"),
                                         getInt("frame-drop-count"));
                                     wili::bootNote("perf",
@@ -1108,6 +1297,7 @@ void MPVCore::eventMainLoop() {
                         // 发生了缓存等待
                         if (!data) break;
 
+                        pausedForCacheState = (*(int *)data != 0);
                         if (*(int *)data) {
                             brls::Logger::info("========> VIDEO PAUSED FOR CACHE");
                             mpvCoreEvent.fire(MpvEventEnum::LOADING_START);
@@ -1189,6 +1379,13 @@ void MPVCore::eventMainLoop() {
                         if (data) {
                             hwCurrent = *(char **)data;
                             brls::Logger::info("========> HW: {}", hwCurrent);
+#ifdef __SWITCH2__
+                            ounceWatchdog.onHwdecSelected(hwCurrent);
+                            wili::PerfDiagnostics::instance().setPipelineTelemetry(
+                                hwCurrent.empty() || hwCurrent == "no" ? "software" : hwCurrent,
+                                wili::hwdecTransferPathName(wili::classifyTransferPath(hwCurrent)), "Zink/GLES3-FBO",
+                                "FIFO-blk0");
+#endif
                             GA("hwdec", {{"hwdec", hwCurrent}})
                         }
                         break;
@@ -1219,6 +1416,10 @@ void MPVCore::eventMainLoop() {
                 break;
         }
     }
+after_event_loop:
+    if (deferredFallback && fallbackReason) {
+        this->triggerOunceFallbackReopen(fallbackReason);
+    }
 }
 
 void MPVCore::reset() {
@@ -1239,6 +1440,13 @@ void MPVCore::reset() {
 
 void MPVCore::setUrl(const std::string &url, const std::string &extra, const std::string &method) {
     brls::Logger::debug("{} Url: {}, extra: {}", method, url, extra);
+    if (method == "replace") {
+        activeLoadUrl   = url;
+        activeLoadExtra = extra;
+#ifdef __SWITCH2__
+        sawLoadDuringRestart = true;
+#endif
+    }
 #if defined(__SWITCH2__)
     // The console asks for one probe before a stream is opened: the audio route
     // and the socket state are what a silent failure is caused by.
@@ -1326,8 +1534,14 @@ void MPVCore::setMirror(bool value) {
 
 void MPVCore::setHwdecCopyMode(bool value) {
     // 如果正在使用硬解，那么将硬解更新为 auto-copy，避免直接硬解因为不经过 cpu 处理导致镜像翻转、滤镜无效
-    if (MPVCore::HARDWARE_DEC) {
+    if (this->isEffectiveHwdecEnabled()) {
+#ifdef __SWITCH2__
+        // ounce-copy already yields CPU-accessible NV12 frames.
+        std::string hwdec = MPVCore::PLAYER_HWDEC_METHOD;
+        (void)value;
+#else
         std::string hwdec = value ? "auto-copy" : MPVCore::PLAYER_HWDEC_METHOD;
+#endif
         command_async("set", "hwdec", hwdec);
         brls::Logger::info("MPV hardware decode: {}", hwdec);
     }

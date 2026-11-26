@@ -128,14 +128,16 @@ void check_upstream_pins() {
         CHECK(at(upstream, std::string("switch2_toolchain/ounce_packages/") + package) == "20261117.1-1");
     }
 
-    // The software-decoding baseline of ADR 0001, by package and by digest.
+    // Switch 2 portlibs and custom-built Switch 2 media stack (FFmpeg 7.1.5 + libounce + mpv 0.36.0).
     const json portlibs = at(upstream, "switch2_toolchain/portlibs");
     CHECK(at(portlibs, "switch-dav1d/version") == "1.5.5-1");
-    CHECK(at(portlibs, "switch-ffmpeg/version") == "7.1.5-5");
-    CHECK(at(portlibs, "switch-libmpv/version") == "0.36.0-2");
     for (auto entry = portlibs.begin(); entry != portlibs.end(); ++entry) {
         check(is_hex(at(entry.value(), "sha256"), 64), entry.key().c_str(), __LINE__);
     }
+
+    const json media = at(upstream, "switch2_toolchain/media_sources");
+    CHECK(at(media, "ffmpeg/version") == "7.1.5");
+    CHECK(at(media, "libmpv/version") == "0.36.0");
 
     check_no_floating_pins(upstream, "UPSTREAM.json");
 
@@ -144,10 +146,31 @@ void check_upstream_pins() {
     CHECK(dockerfile.find(base_image) != std::string::npos);
     CHECK(dockerfile.find(at(upstream, "switch2_toolchain/ounce_signing_key_fingerprint").get<std::string>()) !=
           std::string::npos);
+    CHECK(dockerfile.find("scripts/switch2/ffmpeg/ffmpeg-ounce.patch") != std::string::npos);
     for (auto entry = portlibs.begin(); entry != portlibs.end(); ++entry) {
         CHECK(dockerfile.find(entry.key()) != std::string::npos);
         CHECK(dockerfile.find(at(entry.value(), "sha256").get<std::string>()) != std::string::npos);
     }
+    for (auto entry = media.begin(); entry != media.end(); ++entry) {
+        check(is_hex(at(entry.value(), "sha256"), 64), entry.key().c_str(), __LINE__);
+        CHECK(dockerfile.find(at(entry.value(), "sha256").get<std::string>()) != std::string::npos);
+        const json patches = at(entry.value(), "patches");
+        CHECK(patches.is_object());
+        for (auto p = patches.begin(); p != patches.end(); ++p) {
+            const std::string psha = at(p.value(), "sha256");
+            check(is_hex(psha, 64), p.key().c_str(), __LINE__);
+            if (p.value().contains("url")) {
+                CHECK(dockerfile.find(psha) != std::string::npos);
+            }
+        }
+    }
+
+    // Keep the standalone ounce_dec.c synchronized with ffmpeg-ounce.patch.
+    const std::string ounce_c     = read("scripts/switch2/ffmpeg/ounce_dec.c");
+    const std::string ounce_patch = read("scripts/switch2/ffmpeg/ffmpeg-ounce.patch");
+    CHECK(ounce_patch.find("+++ b/libavcodec/ounce_dec.c") != std::string::npos);
+    CHECK(ounce_patch.find("+const FFCodec ff_h264_ounce_decoder =") != std::string::npos);
+    CHECK(ounce_c.find("ff_h264_ounce_decoder") != std::string::npos);
 }
 
 // Integer IDs must survive parsing and serialization without a float roundtrip.

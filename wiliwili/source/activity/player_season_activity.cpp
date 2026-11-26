@@ -82,6 +82,7 @@ void PlayerSeasonActivity::onIndexChange(size_t index) {
         return;
     }
 
+    MPVCore::instance().onNewPlaybackSession();
     this->changeEpisodeEvent.fire(episodeList[index]);
 
     this->changeIndexEvent.fire(index);

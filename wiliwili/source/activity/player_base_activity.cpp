@@ -288,6 +288,7 @@ void BasePlayerActivity::setCommonData() {
     this->videoUserInfo->addGestureRecognizer(new brls::TapGestureRecognizer(this->videoUserInfo));
 
     this->setRelationButton(false, false, false);
+    MPVCore::instance().onNewPlaybackSession();
 
     eventSubscribeID = MPV_E->subscribe([this](MpvEventEnum event) {
         // 上一次报告历史记录的时间点
@@ -380,7 +381,8 @@ void BasePlayerActivity::setCommonData() {
                 }
                 break;
             case MpvEventEnum::RESTART:
-                this->updateVideoLink();
+                MPVCore::instance().onNewPlaybackSession();
+            this->updateVideoLink();
                 break;
             default:
                 break;
@@ -526,6 +528,7 @@ void BasePlayerActivity::setVideoQuality() {
                 return;
             }
 
+            MPVCore::instance().onNewPlaybackSession();
             this->updateVideoLink();
         },
         getQualityIndex());

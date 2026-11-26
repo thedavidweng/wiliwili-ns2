@@ -163,14 +163,37 @@
       "switch-dav1d": {
         "version": "1.5.5-1",
         "sha256": "e7614ec10b8d017379446bcdbf3e741becf14ae9a55c2cf5d5bba191f200f96b"
+      }
+    },
+    "media_sources": {
+      "ffmpeg": {
+        "version": "7.1.5",
+        "url": "https://ffmpeg.org/releases/ffmpeg-7.1.5.tar.xz",
+        "sha256": "de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f",
+        "patches": {
+          "ffmpeg-7.1.5.patch": {
+            "url": "https://raw.githubusercontent.com/dragonflylee/mpv-build/a04eb13eda5860b38d7a7cd738c10b0edbd0596f/ffmpeg/ffmpeg-7.1.5.patch",
+            "sha256": "e4fe0eeaec9f721f7c79dd484433882da807e7f3925295d56ff001232cc62845"
+          },
+          "getnameinfo.patch": {
+            "url": "https://raw.githubusercontent.com/dragonflylee/mpv-build/a04eb13eda5860b38d7a7cd738c10b0edbd0596f/ffmpeg/getnameinfo.patch",
+            "sha256": "150c56eff36b1179f5409bf2e30fbf6996ce603ba6c365b6bf94928f116c97fa"
+          },
+          "scripts/switch2/ffmpeg/ffmpeg-ounce.patch": {
+            "sha256": "c6ff5a5d93538e85bc30fa4d4bfb0c08cfcf7b2e69bb96b3ffea24bb983ea8a9"
+          }
+        }
       },
-      "switch-ffmpeg": {
-        "version": "7.1.5-5",
-        "sha256": "f79966b9fb75188393cc64da4d24a30500f46ebd991a8f373bc2fcafbf48032c"
-      },
-      "switch-libmpv": {
-        "version": "0.36.0-2",
-        "sha256": "1af27369a6c19dcb0e53a6748914a18e12d780a85c6585e680035604065450cf"
+      "libmpv": {
+        "version": "0.36.0",
+        "url": "https://github.com/mpv-player/mpv/archive/v0.36.0.tar.gz",
+        "sha256": "29abc44f8ebee013bb2f9fe14d80b30db19b534c679056e4851ceadf5a5e8bf6",
+        "patches": {
+          "deko3d.patch": {
+            "url": "https://raw.githubusercontent.com/dragonflylee/mpv-build/a04eb13eda5860b38d7a7cd738c10b0edbd0596f/mpv/deko3d.patch",
+            "sha256": "56256e0eb9dc9d74c2fe13350502efdeb4b0be67ca23961a6a75073a0b9c7a6e"
+          }
+        }
       }
     },
     "devkitpro_packages": {
