@@ -129,8 +129,8 @@ enum class SettingItem {
 };
 
 class APPVersion : public brls::Singleton<APPVersion> {
-#ifdef __SWITCH2__
-    inline static std::string RELEASE_API = "https://api.github.com/repos/thedavidweng/wiliwili-ns2/releases/latest";
+#if defined(__SWITCH2__) || defined(__WINRT__)
+    inline static std::string RELEASE_API = "https://api.github.com/repos/thedavidweng/wiliwili-plus/releases/latest";
 #else
     inline static std::string RELEASE_API = "https://api.github.com/repos/xfangfang/wiliwili/releases/latest";
 #endif

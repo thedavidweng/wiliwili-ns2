@@ -343,6 +343,7 @@ docker run --rm -v $(pwd):/src/ xfangfang/wiliwili_ps4_builder:latest \
 | `cmake/Switch2Platform.cmake` | Re-applies the libounce/OunceVK platform after Borealis' Switch 1 toolchain branch |
 | `scripts/switch2/` | Switch 2 container (`Dockerfile`), helper (`build.sh`) and artifact audit (`audit-nro.sh`) |
 | `platform/switch2/` | Switch 2 replacements for Borealis' SDL video, Switch platform, input, keyboard and font backends plus the `userAppInit` entry point (`borealis/`), and the port's own pointer, CJK, display and lifecycle code; used only with `PLATFORM_SWITCH2=ON`, wired through `HEADER_FILE_ONLY` in `library/CMakeLists.txt` |
+| `platform/uwp/` | Xbox / Windows UWP build scripts, CMakeLists, AppxManifest, assets, and prebuilt mpv headers; pulls the WinRT `borealis` fork (`thedavidweng/borealis` `winrt-dev`) and compiles directly against the root `wiliwili/` sources |
 | `wiliwili/include/utils/platform_api.h` | The `extern "C"` seam between `wiliwili` code and the platform: `wiliwili_network_reset()`, `wiliwili_pre_playback_probe()`, `wiliwili_proxy_is_sensitive()`, and `KEYBOARD_SENSITIVE_INPUT` (`1 << 30`, outside Borealis' 0..7 disable bits) |
 | `wiliwili/include/utils/boot_diagnostics.hpp` | `boot.log` notes, config namespaces, GPU report formatting |
 | `platform/switch2/switch2_pointer.hpp` | Pure pointer decisions: viewport transform, touch domain, per-pad button claims, cursor arbitration, hover state |
@@ -363,7 +364,7 @@ docker run --rm -v $(pwd):/src/ xfangfang/wiliwili_ps4_builder:latest \
 
 ### Issue tracker
 
-Issues and specs live in GitHub Issues for `thedavidweng/wiliwili-ns2`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues and specs live in GitHub Issues for `thedavidweng/wiliwili-plus` (formerly `thedavidweng/wiliwili-ns2`), managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
