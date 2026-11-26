@@ -35,6 +35,9 @@ CLAUDE.md
 # Other AI
 AGENT.md
 # UWP build artifacts
+!platform/uwp/build-ci.ps1
+!platform/uwp/libs/sources/mpv-uwp-wasapi-helper-master/
+!platform/uwp/libs/sources/mpv-uwp-wasapi-helper-master/**
 platform/uwp/borealis/
 platform/uwp/build/
 platform/uwp/x64-uwp-mpv.zip
