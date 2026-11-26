@@ -7,8 +7,10 @@
 #elif defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
 #include <unistd.h>
 #include <borealis/platforms/desktop/desktop_platform.hpp>
-#if defined(_WIN32)
+#if defined(_WIN32) && !defined(__WINRT__)
 #include <shlobj.h>
+#elif defined(__WINRT__)
+#include <winrt/Windows.Storage.h>
 #endif
 #endif
 
@@ -1126,6 +1128,8 @@ void ProgramConfig::init() {
 std::string ProgramConfig::getHomePath() {
 #if defined(__SWITCH__)
     return "/";
+#elif defined(__WINRT__)
+    return getConfigDir();
 #elif defined(_WIN32)
     return std::string(getenv("HOMEPATH"));
 #else
@@ -1138,6 +1142,8 @@ std::string ProgramConfig::getConfigDir() {
     // Console ports keep their settings in a fixed directory, and Switch 2 has
     // its own: a Switch 1 install on the same SD card is never touched.
     return wili::configDirForPlatform(wili::PLATFORM_ID);
+#elif defined(__WINRT__)
+    return winrt::to_string(winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path()) + "\\wiliwili";
 #elif defined(IOS)
     CFURLRef homeURL = CFCopyHomeDirectoryURL();
     if (homeURL != nullptr) {
@@ -1185,7 +1191,7 @@ void ProgramConfig::exit(char* argv[]) {
 #ifdef IOS
 #elif defined(PS4)
 #elif __PSV__
-#elif defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
+#elif defined(__APPLE__) || defined(__linux__) || (defined(_WIN32) && !defined(__WINRT__))
     if (!brls::DesktopPlatform::RESTART_APP) return;
 #ifdef __linux__
     char filePath[PATH_MAX + 1];
