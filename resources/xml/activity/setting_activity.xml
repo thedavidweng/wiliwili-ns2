@@ -55,6 +55,12 @@
                             <SelectorCell
                                     id="setting/video/inmemory"/>
 
+                            <brls:BooleanCell
+                                    id="setting/video/multi_cdn"/>
+
+                            <SelectorCell
+                                    id="setting/video/multi_cdn_mode"/>
+
                         </brls:Box>
                         <brls:Header
                                 width="auto"

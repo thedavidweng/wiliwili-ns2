@@ -125,6 +125,8 @@ enum class SettingItem {
     SHORTCUT_VIDEO_OSD, // 切换OSD显示
     SHORTCUT_VIDEO_PAUSE, // 视频播放暂停快捷键
     PLAYER_AUTO_FULLSCREEN, // 进入播放页后自动全屏
+    PLAYER_MULTI_CDN,       // 多 CDN 并发 Range 加速（海外/高码率点播）
+    PLAYER_MULTI_CDN_MODE,  // 多 CDN 并发加速节点偏好
     CUSTOM_THEME_COLOR,  // 自定义主题色 (十六进制 #RRGGBB，例如 #FF6699)
 };
 

@@ -16,6 +16,7 @@
 #include "utils/config_helper.hpp"
 #include "utils/dash_selector.hpp"
 #include "utils/dialog_helper.hpp"
+#include "utils/multi_cdn_proxy.hpp"
 #include "utils/number_helper.hpp"
 #include "utils/perf_diagnostics.hpp"
 #include "presenter/comment_related.hpp"
@@ -651,11 +652,73 @@ void BasePlayerActivity::onVideoPlayUrl(const bilibili::VideoUrlResult& result) 
         }
 
         // 给播放器设置链接
-        this->video->setUrl(selection.video.base_url, start, end, selection.audioUrls);
+        bool usedMultiCdn = false;
+        if (ProgramConfig::instance().getBoolOption(SettingItem::PLAYER_MULTI_CDN)) {
+            auto& proxy = wili::multicdn::MultiCdnProxy::instance();
+            wili::multicdn::ProxyNetworkOptions netOpts;
+            netOpts.proxy     = ProgramConfig::instance().getProxy();
+            netOpts.verifySsl = ProgramConfig::instance().getBoolOption(SettingItem::TLS_VERIFY);
+            proxy.setNetworkOptions(netOpts);
 
-        // 设置备份视频链接
-        for (const auto& backup_url : selection.video.backup_url) {
-            this->video->setBackupUrl(backup_url, start, end, selection.audioUrls);
+            if (proxy.ensureStarted()) {
+                std::vector<std::string> allUrls;
+                for (const auto& v : result.dash.video) {
+                    allUrls.push_back(v.base_url);
+                    allUrls.insert(allUrls.end(), v.backup_url.begin(), v.backup_url.end());
+                }
+                for (const auto& a : result.dash.audio) {
+                    allUrls.push_back(a.base_url);
+                    allUrls.insert(allUrls.end(), a.backup_url.begin(), a.backup_url.end());
+                }
+                const auto learnedHosts = wili::multicdn::extractUpgcxcodeHosts(allUrls);
+                const int rawMode       = ProgramConfig::instance().getIntOption(SettingItem::PLAYER_MULTI_CDN_MODE);
+                const auto cdnMode      = (rawMode == 1)   ? wili::multicdn::CdnMode::PreferMainland
+                                          : (rawMode == 2) ? wili::multicdn::CdnMode::PreferOverseas
+                                                           : wili::multicdn::CdnMode::Auto;
+
+                const std::string videoKey =
+                    videoDetailResult.aid > 0 ? std::to_string(videoDetailResult.aid) : selection.video.base_url;
+                std::vector<std::string> videoUrls;
+                videoUrls.push_back(selection.video.base_url);
+                videoUrls.insert(videoUrls.end(), selection.video.backup_url.begin(), selection.video.backup_url.end());
+
+                const std::string videoFileKey = videoKey + ":v:" + std::to_string(selection.video.id) + ":" +
+                                                 std::to_string(selection.video.codecid);
+                const std::string proxyVideoUrl = proxy.registerTrack(
+                    videoKey, videoFileKey, videoUrls, learnedHosts, cdnMode,
+                    static_cast<uint64_t>(selection.video.bandwidth));
+
+                std::vector<std::string> proxyAudioUrls;
+                if (selection.hasAudio && !selection.audioUrls.empty()) {
+                    const std::string audioFileKey = videoKey + ":a:" + std::to_string(selection.audio.id);
+                    const std::string proxyAudioUrl = proxy.registerTrack(
+                        videoKey, audioFileKey, selection.audioUrls, learnedHosts, cdnMode,
+                        static_cast<uint64_t>(selection.audio.bandwidth));
+                    if (!proxyAudioUrl.empty()) {
+                        proxyAudioUrls.push_back(proxyAudioUrl);
+                    } else {
+                        proxyAudioUrls = selection.audioUrls;
+                    }
+                }
+
+                if (!proxyVideoUrl.empty()) {
+                    this->video->setUrl(proxyVideoUrl, start, end, proxyAudioUrls);
+                    this->video->setBackupUrl(selection.video.base_url, start, end, selection.audioUrls);
+                    for (const auto& backup_url : selection.video.backup_url) {
+                        this->video->setBackupUrl(backup_url, start, end, selection.audioUrls);
+                    }
+                    usedMultiCdn = true;
+                }
+            }
+        }
+
+        if (!usedMultiCdn) {
+            this->video->setUrl(selection.video.base_url, start, end, selection.audioUrls);
+
+            // 设置备份视频链接
+            for (const auto& backup_url : selection.video.backup_url) {
+                this->video->setBackupUrl(backup_url, start, end, selection.audioUrls);
+            }
         }
     } else {
         // flv

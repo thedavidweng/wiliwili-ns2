@@ -697,6 +697,28 @@ void SettingActivity::onContentAvailable() {
                                MPVCore::instance().restart();
                            });
 
+    /// Multi-CDN concurrent Range acceleration
+    bool multiCdnEnabled = conf.getBoolOption(SettingItem::PLAYER_MULTI_CDN);
+    btnMultiCdn->init("wiliwili/setting/app/playback/multi_cdn"_i18n, multiCdnEnabled, [this](bool value) {
+        ProgramConfig::instance().setSettingItem(SettingItem::PLAYER_MULTI_CDN, value);
+        selectorMultiCdnMode->setVisibility(value ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+    });
+
+    auto multiCdnModeOpt = conf.getOptionData(SettingItem::PLAYER_MULTI_CDN_MODE);
+    selectorMultiCdnMode->setVisibility(multiCdnEnabled ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+    selectorMultiCdnMode->init(
+        "wiliwili/setting/app/playback/multi_cdn_mode"_i18n,
+        {
+            "wiliwili/setting/app/playback/multi_cdn_mode_auto"_i18n,
+            "wiliwili/setting/app/playback/multi_cdn_mode_mainland"_i18n,
+            "wiliwili/setting/app/playback/multi_cdn_mode_overseas"_i18n,
+        },
+        conf.getIntOptionIndex(SettingItem::PLAYER_MULTI_CDN_MODE), [multiCdnModeOpt](int data) {
+            ProgramConfig::instance().setSettingItem(SettingItem::PLAYER_MULTI_CDN_MODE,
+                                                     multiCdnModeOpt.rawOptionList[data]);
+            return true;
+        });
+
     /// TLS verify
     btnTls->init("wiliwili/setting/app/network/tls"_i18n, conf.getBoolOption(SettingItem::TLS_VERIFY), [](bool data) {
         auto& conf = ProgramConfig::instance();

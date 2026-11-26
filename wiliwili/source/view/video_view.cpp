@@ -805,7 +805,8 @@ std::string VideoView::genExtraUrlParam(int start, int end, const std::string& a
     return genExtraUrlParam(start, end, audios);
 }
 
-std::string VideoView::genExtraUrlParam(int start, int end, const std::vector<std::string>& audios) {
+std::string VideoView::genExtraUrlParam(int start, int end, const std::vector<std::string>& audios,
+                                        bool bypassHttpProxy) {
     std::string extra =
 #ifdef __PSV__
         "referrer=\"https://www.bilibili.com\",network-timeout=10";
@@ -813,8 +814,10 @@ std::string VideoView::genExtraUrlParam(int start, int end, const std::vector<st
         "referrer=\"https://www.bilibili.com\",network-timeout=5";
 #endif
     auto proxy = ProgramConfig::instance().getProxy();
-    if (!proxy.empty()) {
+    if (!proxy.empty() && !bypassHttpProxy) {
         extra += fmt::format(",http-proxy=\"{}\"", proxy);
+    } else if (bypassHttpProxy) {
+        extra += ",http-proxy=\"\"";
     }
     if (start > 0) {
         extra += fmt::format(",start={}", start);
@@ -835,7 +838,8 @@ void VideoView::setUrl(const std::string& url, int start, int end, const std::st
 }
 
 void VideoView::setUrl(const std::string& url, int start, int end, const std::vector<std::string>& audios) {
-    mpvCore->setUrl(url, genExtraUrlParam(start, end, audios));
+    const bool isLoopback = url.rfind("http://127.0.0.1:", 0) == 0;
+    mpvCore->setUrl(url, genExtraUrlParam(start, end, audios, isLoopback));
 }
 
 void VideoView::setBackupUrl(const std::string& url, int start, int end, const std::string& audio) {
@@ -843,7 +847,8 @@ void VideoView::setBackupUrl(const std::string& url, int start, int end, const s
 }
 
 void VideoView::setBackupUrl(const std::string& url, int start, int end, const std::vector<std::string>& audios) {
-    mpvCore->setBackupUrl(url, genExtraUrlParam(start, end, audios));
+    const bool isLoopback = url.rfind("http://127.0.0.1:", 0) == 0;
+    mpvCore->setBackupUrl(url, genExtraUrlParam(start, end, audios, isLoopback));
 }
 
 void VideoView::setUrl(const std::vector<EDLUrl>& edl_urls, int start, int end) {

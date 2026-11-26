@@ -122,3 +122,20 @@ target_link_libraries(wiliwili_bilibili_api_test PRIVATE cpr::cpr pystring fmt)
 target_compile_definitions(wiliwili_bilibili_api_test PRIVATE
         WILIWILI_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 add_test(NAME bilibili_api COMMAND wiliwili_bilibili_api_test)
+
+# Multi-CDN concurrent Range proxy: URL classification, per-video host speed
+# model, loopback streaming HTTP Range delivery, racing, and byte-level integrity.
+find_package(CURL REQUIRED)
+find_package(Threads REQUIRED)
+add_executable(wiliwili_multi_cdn_test
+        multi_cdn_test.cpp
+        ${PROJECT_SOURCE_DIR}/wiliwili/source/utils/multi_cdn_proxy.cpp)
+set_target_properties(wiliwili_multi_cdn_test PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON)
+target_include_directories(wiliwili_multi_cdn_test PRIVATE
+        ${PROJECT_SOURCE_DIR}/wiliwili/include)
+target_link_libraries(wiliwili_multi_cdn_test PRIVATE CURL::libcurl Threads::Threads)
+target_compile_definitions(wiliwili_multi_cdn_test PRIVATE
+        WILIWILI_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+add_test(NAME multi_cdn COMMAND wiliwili_multi_cdn_test)

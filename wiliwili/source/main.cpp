@@ -18,6 +18,7 @@
 #include "utils/activity_helper.hpp"
 #include "utils/boot_diagnostics.hpp"
 #include "utils/boot_api.h"
+#include "utils/multi_cdn_proxy.hpp"
 #include "utils/perf_diagnostics.hpp"
 #include "view/mpv_core.hpp"
 
@@ -139,6 +140,8 @@ int run(int argc, char* argv[]) {
 
     brls::Logger::info("mainLoop done");
     wili::bootNote("main", "main loop finished");
+
+    wili::multicdn::MultiCdnProxy::instance().shutdown();
 
     // Cleanup curl and Check whether restart is required
     ProgramConfig::instance().exit(argv);

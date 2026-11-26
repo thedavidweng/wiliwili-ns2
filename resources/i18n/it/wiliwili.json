@@ -33,7 +33,12 @@
         "video_format": "Formato video",
         "window_fullscreen_on_app_fullscreen": "Schermo intero della finestra quando si entra in schermo intero in-app",
         "dolby": "Dolby Atmos",
-        "hi_res": "Hi-Res"
+        "hi_res": "Hi-Res",
+        "multi_cdn": "Accelerazione multi-CDN simultanea",
+        "multi_cdn_mode": "Preferenza nodi multi-CDN",
+        "multi_cdn_mode_auto": "Automatico (più veloce misurato)",
+        "multi_cdn_mode_mainland": "Preferisci mirror Cina continentale",
+        "multi_cdn_mode_overseas": "Preferisci mirror esteri"
       },
       "image": {
         "header": "Immagine",
@@ -185,10 +190,10 @@
   },
   "hints": {
     "hint1": "Seleziona un gioco dalla schermata home",
-    "hint2": "Tieni premuto il tasto \uE0E5 e clicca \uE0E0 per entrare in hbmenu",
+    "hint2": "Tieni premuto il tasto  e clicca  per entrare in hbmenu",
     "hint3": "In hbmenu, seleziona wiliwili",
     "hint4": "Opzionale: Usa il forwarder NSP di wiliwili (Posiziona wiliwili.nro in /switch/wiliwili.nro)",
-    "hint_nsp": "Clicca \uE0E0 per installare il forwarder NSP",
+    "hint_nsp": "Clicca  per installare il forwarder NSP",
     "hint_confirm": "L'installazione del forwarder NSP potrebbe risultare in un ban\nConferma nuovamente",
     "hint_right": "Le immagini provengono da Internet, il copyright appartiene a Nintendo Co., Ltd"
   },

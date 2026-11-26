@@ -7,7 +7,7 @@
 
 - **核心增强**：
   - **丝滑滚动弹幕**：12 帧 VSync 相位锁定帧时钟（`DanmakuMotionClock`）、亚像素 NanoVG 平移（消除 Fontstash 整像素量化抖动）、非阻塞 `mpvRenderContextRender` 与单调弹幕裁剪修复。
-  - **多 CDN 并发 Range 加速**：针对海外与高码率点播的多 CDN 分段并发下载与校验回源代理（筹备合入）。
+  - **多 CDN 并发 Range 加速**（默认关闭，设置 → 播放 → **多 CDN 并发加速**）：基于本地 `127.0.0.1` 流式 Range 代理与 `curl_multi` 滑动窗口调度，按视频独立测量各节点 TTFB/吞吐、异节点竞速救援、字节级重叠校验与 307 自动回退，支持「自动 / 优先大陆镜像 / 优先海外镜像」偏好。
 - **Nintendo Switch 2 (`wiliwili-NS2.nro`)**：
   - **安装**：从[本仓库 Releases](https://github.com/thedavidweng/wiliwili-plus/releases) 或 [Actions (`Switch 2 CI & Host Tests`)](https://github.com/thedavidweng/wiliwili-plus/actions/workflows/switch2.yml) 下载压缩包解压至内存卡根目录（`/switch/wiliwili-ns2/wiliwili-NS2.nro` 或 `/switch/wiliwili-NS2.nro`），在 [kaiHEN](https://github.com/ouncebrew/kaihen) 中启动。配置与 `boot.log` 独立保存在 `/config/wiliwili-ns2/`。
   - **适配**：OunceVK（OpenGL ES 3.1）渲染与 FFmpeg 7.1 / mpv 0.36.0 软解基线（`VideoDecoder` 硬解评估中）；支持手柄、触屏、左右 Joy-Con 2 鼠标模式、系统中文输入法（`swkbd`）及系统共享 CJK 字库；支持 1080p 掌机、底座分辨率/高刷切换、空闲降帧与睡眠唤醒恢复；移除遥测（`NO_GA`）。

@@ -33,7 +33,12 @@
         "video_format": "動画ぬ形式",
         "window_fullscreen_on_app_fullscreen": "アプリ内全画面時にウィンドウを全画面にする",
         "dolby": "Dolby Atmos",
-        "hi_res": "Hi-Res"
+        "hi_res": "Hi-Res",
+        "multi_cdn": "マルチ CDN 並列ダウンロード加速",
+        "multi_cdn_mode": "マルチ CDN ノード優先",
+        "multi_cdn_mode_auto": "自動（実測最速）",
+        "multi_cdn_mode_mainland": "中国本土ミラー優先",
+        "multi_cdn_mode_overseas": "海外ミラー優先"
       },
       "image": {
         "header": "画像",

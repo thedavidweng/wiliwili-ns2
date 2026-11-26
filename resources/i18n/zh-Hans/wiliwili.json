@@ -33,7 +33,12 @@
         "video_format": "视频格式",
         "dolby": "杜比全景声",
         "hi_res": "Hi-Res 无损",
-        "window_fullscreen_on_app_fullscreen": "应用内全屏时自动切换窗口全屏"
+        "window_fullscreen_on_app_fullscreen": "应用内全屏时自动切换窗口全屏",
+        "multi_cdn": "多 CDN 并发加速",
+        "multi_cdn_mode": "并发加速节点偏好",
+        "multi_cdn_mode_auto": "自动（按片实测最优）",
+        "multi_cdn_mode_mainland": "优先大陆镜像",
+        "multi_cdn_mode_overseas": "优先海外镜像"
       },
       "image": {
         "header": "图片设置",

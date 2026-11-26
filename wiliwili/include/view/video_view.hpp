@@ -65,7 +65,8 @@ public:
 
     static std::string genExtraUrlParam(int start, int end, const std::string& audio);
 
-    static std::string genExtraUrlParam(int start, int end, const std::vector<std::string>& audios = {});
+    static std::string genExtraUrlParam(int start, int end, const std::vector<std::string>& audios = {},
+                                        bool bypassHttpProxy = false);
 
     void resume();
 
