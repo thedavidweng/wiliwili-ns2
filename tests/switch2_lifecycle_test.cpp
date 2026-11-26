@@ -323,6 +323,19 @@ void check_frame_pacing() {
     pinned.setAdaptive(true);
     CHECK(pinned.update(false, start + 10000000) == 0);
     CHECK(pinned.update(false, start + 11000000) == 30);
+
+    // Active pacing at display refresh prevents 4-buffer Vulkan FIFO burst stalls.
+    CHECK_EQ(wili::activeFrameCapForRefresh(0), 60);
+    CHECK_EQ(wili::activeFrameCapForRefresh(60), 60);
+    CHECK_EQ(wili::activeFrameCapForRefresh(120), 120);
+
+    wili::FramePacer active60{{30, 1000000, wili::activeFrameCapForRefresh(60)}};
+    CHECK_EQ(active60.update(true, start), 60);
+    CHECK(!active60.idle());
+    CHECK_EQ(active60.update(false, start + 1000000), 30);
+    CHECK(active60.idle());
+    active60.setActiveFps(wili::activeFrameCapForRefresh(120));
+    CHECK_EQ(active60.update(true, start + 1100000), 120);
 }
 
 void check_display_diagnostics() {

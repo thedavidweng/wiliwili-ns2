@@ -266,6 +266,8 @@ double displayScaleFactor() { return state.scaleFactor; }
 
 Framebuffer displayFramebuffer() { return state.framebuffer; }
 
+int displayRefreshHz() { return state.refresh.hz; }
+
 void displayShutdown() {
     if (state.changeEventOpen) {
         eventClose(&state.changeEvent);

@@ -383,6 +383,7 @@ bool SwitchPlatform::mainLoopIteration() {
     // code: a swap interval of 1 presents once per iteration, so the loop is
     // already at 60 or at the 120 Hz the console granted.
     framePacer.setAdaptive(VideoContext::swapInterval != 0);
+    framePacer.setActiveFps(wili::activeFrameCapForRefresh(wili::displayRefreshHz()));
     const bool busy = active || mediaPlaybackActive || !Ticking::runningTickings.empty() || inputActive();
     const int cap   = framePacer.update(busy, getCPUTimeUsec());
     if (cap == wili::FramePacer::LEAVE_ALONE) {

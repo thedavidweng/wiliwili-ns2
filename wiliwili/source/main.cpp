@@ -57,6 +57,9 @@ int run(int argc, char* argv[]) {
     }
 
     wili::bootNote("main", "wiliwili-NS2 booting");
+#ifdef __SWITCH2__
+    wili::PerfDiagnostics::instance().setEnabled(true);
+#endif
 
     // Load cookies and settings
     ProgramConfig::instance().init();

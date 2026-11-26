@@ -132,21 +132,18 @@ inline std::string describeDisplay(const OutputMode& output, const Framebuffer& 
     return "render " + render + ", refresh " + describeRefresh(refresh) + ", output " + physical;
 }
 
+inline int activeFrameCapForRefresh(int refreshHz) { return refreshHz == 120 ? 120 : 60; }
+
 // Presentation-timed frame scheduling.
 //
-// The main loop presents once per iteration, so with a swap interval of 1 it
-// already runs at the panel rate: 60 Hz handheld, 120 Hz when the console grants
-// the request. That is what "adapts to the active refresh rate" means here:
-// nothing forces a rate, the panel decides, and 120 Hz UI support costs no code.
-// What is left to decide is a screen nobody is touching: presenting 120 frames
-// of an unchanged picture a second is battery for nothing, so after `quietUs`
-// without input, animation, a display change or playback the platform caps the
-// loop at `idleFps` (Application::setLimitedFPS, which sleeps after the present)
-// and any activity restores every refresh on the same frame.
-//
-// The cap is never applied while the user has pinned a frame rate themselves
-// (LIMITED_FPS, which sets a swap interval of 0): that is someone else's
-// decision, so update() then answers LEAVE_ALONE.
+// On OunceVK / Mesa Zink's multi-buffer Vulkan FIFO swapchain, SDL_GL_SwapWindow
+// returns immediately (< 1 ms) for up to four frames before stalling on queue
+// saturation (~66-80 ms). Leaving LIMITED_FPS uncapped (0) during active
+// playback lets the CPU cram 4 burst frames in ~3 ms and then stall Zink/Vulkan
+// presentation, dropping video output frames. Pacing active frames to the panel
+// refresh rate (activeFps: 60 or 120, defaulting to 0 only when explicitly
+// requested) prevents FIFO saturation while still backing off to idleFps when
+// the UI is quiet.
 class FramePacer {
   public:
     static inline constexpr int LEAVE_ALONE = -1;
@@ -154,6 +151,7 @@ class FramePacer {
     struct Config {
         int idleFps      = 30;
         int64_t quietUs  = 1000000;
+        int activeFps    = 0;
     };
 
     explicit FramePacer(const Config& config) : config(config) {}
@@ -161,10 +159,12 @@ class FramePacer {
 
     void setAdaptive(bool value) { this->adaptivePacing = value; }
 
+    void setActiveFps(int fps) { this->config.activeFps = fps > 0 ? fps : 0; }
+
     bool idle() const { return this->idling; }
 
     // `busy` is the caller's activity verdict for this frame; returns the frame
-    // cap to apply, 0 for every refresh.
+    // cap to apply, or config.activeFps when active.
     int update(bool busy, int64_t nowUs) {
         if (!this->adaptivePacing) {
             this->started = false;
@@ -178,7 +178,7 @@ class FramePacer {
         }
         if (busy) this->lastBusy = nowUs;
         this->idling = !busy && nowUs - this->lastBusy >= this->config.quietUs;
-        return this->idling ? this->config.idleFps : 0;
+        return this->idling ? this->config.idleFps : this->config.activeFps;
     }
 
   private:
@@ -210,6 +210,7 @@ bool displayPoll(bool force = false);
 
 double displayScaleFactor();
 Framebuffer displayFramebuffer();
+int displayRefreshHz();
 
 // Closes the display change event and vi2 handles. Called last during teardown.
 void displayShutdown();

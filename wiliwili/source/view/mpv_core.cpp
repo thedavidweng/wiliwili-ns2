@@ -13,6 +13,7 @@
 #include "utils/config_helper.hpp"
 #include "utils/number_helper.hpp"
 #include "utils/crash_helper.hpp"
+#include "utils/boot_diagnostics.hpp"
 #include "utils/perf_diagnostics.hpp"
 #include "utils/platform_api.h"
 #include "view/mpv_core.hpp"
@@ -951,6 +952,16 @@ void MPVCore::eventMainLoop() {
             } break;
             case MPV_EVENT_FILE_LOADED:
                 brls::Logger::info("========> MPV_EVENT_FILE_LOADED");
+#ifdef __SWITCH2__
+                if (wili::PerfDiagnostics::instance().isEnabled()) {
+                    wili::PerfDiagnostics::instance().resetSamples();
+                    wili::bootNote("video", fmt::format("loaded fmt={} dec={} pix={} {}x{}@{} cache={}MB",
+                                                        getString("file-format"), getString("video-codec"),
+                                                        getString("video-params/pixelformat"), getInt("video-params/w"),
+                                                        getInt("video-params/h"), getInt("container-fps"),
+                                                        MPVCore::INMEMORY_CACHE));
+                }
+#endif
                 // event 8: 文件预加载结束，准备解码
                 mpvCoreEvent.fire(MpvEventEnum::MPV_LOADED);
                 // 发布一次进度更新事件，避免进度条在0秒时没有进度更新
@@ -985,6 +996,12 @@ void MPVCore::eventMainLoop() {
             case MPV_EVENT_END_FILE: {
                 // event 7: 文件播放结束
                 brls::Logger::info("========> MPV_STOP");
+#ifdef __SWITCH2__
+                if (wili::PerfDiagnostics::instance().isEnabled()) {
+                    wili::bootNote("perf", "stop " + wili::PerfDiagnostics::formatSanitizedSummary(
+                                                         wili::PerfDiagnostics::instance().snapshot()));
+                }
+#endif
                 mpvCoreEvent.fire(MpvEventEnum::MPV_STOP);
                 video_stopped = true;
                 auto node     = (mpv_event_end_file *)event->data;
@@ -1041,6 +1058,30 @@ void MPVCore::eventMainLoop() {
                             if (video_progress != (int64_t)playback_time) {
                                 video_progress = (int64_t)playback_time;
                                 mpvCoreEvent.fire(MpvEventEnum::UPDATE_PROGRESS);
+#ifdef __SWITCH2__
+                                auto &perf = wili::PerfDiagnostics::instance();
+                                if (perf.isEnabled() &&
+                                    (video_progress == 1 || video_progress == 2 || video_progress == 5 ||
+                                     (video_progress > 5 && video_progress % 10 == 0))) {
+                                    const auto current = perf.snapshot();
+                                    perf.updatePlaybackMetadata(
+                                        current.sourceQn, static_cast<int>(getInt("video-params/w")),
+                                        static_cast<int>(getInt("video-params/h")),
+                                        static_cast<int>(brls::Application::windowWidth),
+                                        static_cast<int>(brls::Application::windowHeight),
+                                        current.outputWidth > 0 ? current.outputWidth
+                                                                : static_cast<int>(brls::Application::windowWidth),
+                                        current.outputHeight > 0 ? current.outputHeight
+                                                                 : static_cast<int>(brls::Application::windowHeight),
+                                        current.docked, "software", "GLES3 FBO", getDouble("avsync"),
+                                        getDouble("demuxer-cache-duration"), 0.0, getInt("decoder-frame-drop-count"),
+                                        getInt("frame-drop-count"));
+                                    wili::bootNote("perf",
+                                                   fmt::format("t={}s codec={} fps={} {}", video_progress,
+                                                               getString("video-codec"), getInt("container-fps"),
+                                                               wili::PerfDiagnostics::formatSanitizedSummary(perf.snapshot())));
+                                }
+#endif
                                 // 判断是否需要暂停播放
                                 if (CLOSE_TIME > 0 && wiliwili::getUnixTime() > CLOSE_TIME) {
                                     CLOSE_TIME = 0;
