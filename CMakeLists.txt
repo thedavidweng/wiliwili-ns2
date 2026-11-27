@@ -15,6 +15,9 @@ cmake_dependent_option(BUILTIN_NSP "Built in NSP forwarder" OFF "PLATFORM_SWITCH
 # NintendoSwitch 2: PLATFORM_SWITCH with the [ounce] libounce devkit and
 # OunceVK in place of libnx and the Switch 1 GPU libraries.
 option(PLATFORM_SWITCH2 "build for Switch 2 using the [ounce] devkit" OFF)
+# Experimental Stage 1 H.264 hardware-decode default for isolated test NROs.
+# Production switch2-release keeps software decoding as the default until G3.
+option(WILIWILI_SWITCH2_EXPERIMENTAL_HWDEC "default-on Switch 2 ounce-copy hwdec in experimental NRO" OFF)
 
 # Host checks for the pinned upstream revisions and the Switch 2 configuration.
 option(WILIWILI_BUILD_TESTS "build the host configuration tests" OFF)
@@ -321,9 +324,16 @@ elseif (PLATFORM_SWITCH)
         string(SUBSTRING ${GIT_TAG_VERSION} 1 -1 APP_VERSION)
     endif ()
     if (PLATFORM_SWITCH2)
-        # wiliwili-NS2.nro, with the unstripped wiliwili-NS2.elf next to it.
-        set(APP_ARTIFACT_NAME wiliwili-NS2)
-        set(APP_TITLE wiliwili-NS2)
+        if (WILIWILI_SWITCH2_EXPERIMENTAL_HWDEC)
+            # Isolated experimental H.264 hardware-decode test NRO; does not replace stable software NRO.
+            set(APP_ARTIFACT_NAME wiliwili-NS2-hwdec)
+            set(APP_TITLE wiliwili-NS2-hwdec)
+            list(APPEND APP_PLATFORM_OPTION -DWILIWILI_SWITCH2_EXPERIMENTAL_HWDEC)
+        else ()
+            # wiliwili-NS2.nro, with the unstripped wiliwili-NS2.elf next to it.
+            set(APP_ARTIFACT_NAME wiliwili-NS2)
+            set(APP_TITLE wiliwili-NS2)
+        endif ()
         set(APP_AUTHOR "thedavidweng (NS2), xfangfang and contributors")
     else ()
         set(APP_ARTIFACT_NAME ${PROJECT_NAME})

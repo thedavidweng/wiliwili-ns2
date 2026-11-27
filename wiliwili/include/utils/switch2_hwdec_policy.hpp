@@ -6,8 +6,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace wili {
 
@@ -256,14 +259,20 @@ inline HwdecTransferPath classifyTransferPath(const std::string& hwdecCurrent) {
 
 class OunceSessionWatchdog {
 public:
-    static constexpr int64_t DEFAULT_STALL_TIMEOUT_US = 4000000;  // 4 seconds of active playback with no progress
+    static constexpr int64_t DEFAULT_STALL_TIMEOUT_US   = 4000000;   // 4s active playback with no decoded output
+    static constexpr int64_t DEFAULT_STARTUP_TIMEOUT_US = 10000000;  // 10s tolerance for valid cold decoder startup
 
     struct SavedPlaybackState {
-        int64_t positionSec = 0;
-        double speed        = 1.0;
+        uint64_t sessionGeneration = 0;
+        uint64_t streamGeneration  = 0;
+        int64_t positionSec        = 0;
+        double speed               = 1.0;
         std::string aid;
         std::string sid;
-        bool wasPaused = false;
+        bool wasPaused             = false;
+        std::string url;
+        std::string extra;
+        std::vector<std::pair<std::string, std::string>> backupUrls;
     };
 
     enum class Action {
@@ -271,32 +280,79 @@ public:
         FallbackToSoftware,
     };
 
-    explicit OunceSessionWatchdog(int64_t stallTimeoutUs = DEFAULT_STALL_TIMEOUT_US)
-        : stallTimeoutUs_(stallTimeoutUs > 0 ? stallTimeoutUs : DEFAULT_STALL_TIMEOUT_US) {}
+    explicit OunceSessionWatchdog(int64_t stallTimeoutUs = DEFAULT_STALL_TIMEOUT_US,
+                                  int64_t startupTimeoutUs = DEFAULT_STARTUP_TIMEOUT_US)
+        : stallTimeoutUs_(stallTimeoutUs > 0 ? stallTimeoutUs : DEFAULT_STALL_TIMEOUT_US),
+          startupTimeoutUs_(startupTimeoutUs > 0 ? startupTimeoutUs
+                                                 : std::max(DEFAULT_STARTUP_TIMEOUT_US, stallTimeoutUs_)) {}
 
     // Reset per-stream state when opening a brand new video/episode/channel.
     // Reevaluates hardware eligibility for subsequent streams.
     void onNewStream() {
-        swLatched_             = false;
-        hwAttempted_           = false;
-        hwActive_              = false;
-        fallbackTriggered_     = false;
-        restorePending_        = false;
-        lastProgressTimeSec_   = -1.0;
-        lastDecodedFrames_     = -1;
-        lastProgressWallUs_    = 0;
-        hwErrorCount_          = 0;
-        savedState_            = SavedPlaybackState{};
+        swLatched_          = false;
+        hwAttempted_        = false;
+        hwActive_           = false;
+        fallbackTriggered_  = false;
+        restorePending_     = false;
+        firstFrameProduced_ = false;
+        awaitingBaseline_   = false;
+        wasSuspended_       = false;
+        lastDecodedFrames_  = -1;
+        lastProgressWallUs_ = 0;
+        hwErrorCount_       = 0;
+        savedState_         = SavedPlaybackState{};
     }
 
-    // Arm software fallback for the current playback session so we reopen
+    // Quality change switches to a different encoded stream within the same logical title;
+    // re-evaluate hardware eligibility cleanly on the new bitrate/codec stream.
+    void onQualityChanged() {
+        swLatched_          = false;
+        hwAttempted_        = false;
+        hwActive_           = false;
+        fallbackTriggered_  = false;
+        restorePending_     = false;
+        firstFrameProduced_ = false;
+        awaitingBaseline_   = false;
+        wasSuspended_       = false;
+        lastDecodedFrames_  = -1;
+        lastProgressWallUs_ = 0;
+        hwErrorCount_       = 0;
+        savedState_         = SavedPlaybackState{};
+    }
+
+    // Explicit user preference toggle overrides the current session latch.
+    void onPreferenceChanged() { onNewStream(); }
+
+    // Network reconnect reloads the current stream: keep swLatched_ so a failed
+    // hardware session does not bounce back to hardware.
+    void onNetworkReconnect(int64_t nowUs) {
+        awaitingBaseline_   = true;
+        wasSuspended_       = false;
+        lastDecodedFrames_  = -1;
+        lastProgressWallUs_ = nowUs;
+    }
+
+    // Reset decoder-output sampling baseline after seek/flush/backward-seek.
+    void onSeekOrFlush(int64_t nowUs) {
+        awaitingBaseline_   = true;
+        wasSuspended_       = false;
+        lastDecodedFrames_  = -1;
+        lastProgressWallUs_ = nowUs;
+    }
+
+    // Arm software fallback for the current logical playback session so we reopen
     // cleanly once in SW mode and never loop back to HW for this stream.
     void armFallbackReopen(const SavedPlaybackState& state) {
-        swLatched_         = true;
-        hwActive_          = false;
-        fallbackTriggered_ = true;
-        restorePending_    = true;
-        savedState_        = state;
+        swLatched_          = true;
+        hwActive_           = false;
+        fallbackTriggered_  = true;
+        restorePending_     = true;
+        firstFrameProduced_ = false;
+        awaitingBaseline_   = false;
+        wasSuspended_       = false;
+        lastDecodedFrames_  = -1;
+        lastProgressWallUs_ = 0;
+        savedState_         = state;
     }
 
     bool consumeRestoreState(SavedPlaybackState& out) {
@@ -306,10 +362,17 @@ public:
         return true;
     }
 
+    const SavedPlaybackState& peekRestoreState() const { return savedState_; }
+
     void onHwdecSelected(const std::string& hwdecCurrent) {
         if (hwdecCurrent == "ounce-copy" || hwdecCurrent == "h264_ounce-copy") {
-            hwAttempted_ = true;
-            hwActive_    = true;
+            hwAttempted_        = true;
+            hwActive_           = true;
+            firstFrameProduced_ = false;
+            awaitingBaseline_   = true;
+            wasSuspended_       = false;
+            lastDecodedFrames_  = -1;
+            lastProgressWallUs_ = 0;
         } else {
             hwActive_ = false;
         }
@@ -336,25 +399,47 @@ public:
         return Action::None;
     }
 
-    Action onPlaybackSample(double playbackTimeSec, int64_t decodedFrames, bool paused, bool seeking,
-                            bool pausedForCache, bool eof, int64_t nowUs) {
-        const bool timeAdvanced =
-            (lastProgressTimeSec_ < 0.0) ? (playbackTimeSec > 0.0) : (playbackTimeSec - lastProgressTimeSec_ > 1e-4);
-        const bool frameAdvanced = (decodedFrames > lastDecodedFrames_ && decodedFrames > 0);
-
-        if (timeAdvanced || frameAdvanced) {
-            if (playbackTimeSec > lastProgressTimeSec_) lastProgressTimeSec_ = playbackTimeSec;
-            if (decodedFrames > lastDecodedFrames_) lastDecodedFrames_ = decodedFrames;
-            lastProgressWallUs_ = nowUs;
-            return Action::None;
-        }
-
+    // Sample ACTUAL video decoder/renderer output progress (never audio playback-time
+    // or estimated-frame-number). Audio advancing while decoderOutputFrames freezes
+    // does not count as forward video progress once playback is active.
+    Action onDecoderProgressSample(int64_t decoderOutputFrames, bool paused, bool seeking, bool pausedForCache,
+                                   bool eof, int64_t nowUs) {
         if (!hwActive_ || swLatched_ || fallbackTriggered_) {
             lastProgressWallUs_ = nowUs;
             return Action::None;
         }
 
         if (paused || seeking || pausedForCache || eof) {
+            wasSuspended_       = true;
+            lastProgressWallUs_ = nowUs;
+            return Action::None;
+        }
+
+        if (wasSuspended_) {
+            wasSuspended_       = false;
+            lastProgressWallUs_ = nowUs;
+            if (decoderOutputFrames >= 0 && (awaitingBaseline_ || decoderOutputFrames < lastDecodedFrames_)) {
+                lastDecodedFrames_ = decoderOutputFrames;
+                awaitingBaseline_  = false;
+            }
+            return Action::None;
+        }
+
+        // Handle explicit seek/flush reset or monotonic counter wrap/reset cleanly.
+        if (decoderOutputFrames >= 0 &&
+            (lastDecodedFrames_ < 0 || awaitingBaseline_ || decoderOutputFrames < lastDecodedFrames_)) {
+            lastDecodedFrames_ = decoderOutputFrames;
+            awaitingBaseline_  = false;
+            if (decoderOutputFrames > 0) {
+                firstFrameProduced_ = true;
+            }
+            lastProgressWallUs_ = nowUs;
+            return Action::None;
+        }
+
+        if (decoderOutputFrames > lastDecodedFrames_) {
+            lastDecodedFrames_  = decoderOutputFrames;
+            firstFrameProduced_ = true;
             lastProgressWallUs_ = nowUs;
             return Action::None;
         }
@@ -364,7 +449,8 @@ public:
             return Action::None;
         }
 
-        if (nowUs - lastProgressWallUs_ >= stallTimeoutUs_) {
+        const int64_t limitUs = firstFrameProduced_ ? stallTimeoutUs_ : startupTimeoutUs_;
+        if (nowUs - lastProgressWallUs_ >= limitUs) {
             swLatched_         = true;
             fallbackTriggered_ = true;
             return Action::FallbackToSoftware;
@@ -377,20 +463,194 @@ public:
     bool isHwActive() const { return hwActive_; }
     bool wasFallbackTriggered() const { return fallbackTriggered_; }
     bool hasPendingRestore() const { return restorePending_; }
+    bool hasFirstFrameProduced() const { return firstFrameProduced_; }
     int hwErrorCount() const { return hwErrorCount_; }
 
 private:
     int64_t stallTimeoutUs_;
+    int64_t startupTimeoutUs_;
     bool swLatched_           = false;
     bool hwAttempted_         = false;
     bool hwActive_            = false;
     bool fallbackTriggered_   = false;
     bool restorePending_      = false;
-    double lastProgressTimeSec_ = -1.0;
+    bool firstFrameProduced_  = false;
+    bool awaitingBaseline_    = false;
+    bool wasSuspended_        = false;
     int64_t lastDecodedFrames_  = -1;
     int64_t lastProgressWallUs_ = 0;
     int hwErrorCount_           = 0;
     SavedPlaybackState savedState_{};
+};
+
+// Coordinates Switch 2 playback session generation, hardware decode option
+// reapplication, RESTART vs recovery reopen distinction, and state restoration.
+// Shared directly between MPVCore, player activities, and host tests.
+class OuncePlaybackController {
+public:
+    explicit OuncePlaybackController(
+        int64_t stallTimeoutUs   = OunceSessionWatchdog::DEFAULT_STALL_TIMEOUT_US,
+        int64_t startupTimeoutUs = OunceSessionWatchdog::DEFAULT_STARTUP_TIMEOUT_US)
+        : watchdog_(stallTimeoutUs, startupTimeoutUs) {}
+
+    static std::string effectiveHwdecMethod(bool userEnabled, bool swLatched, const std::string& configuredMethod) {
+        if (!userEnabled || swLatched) return "no";
+        if (configuredMethod.empty() || configuredMethod == "no" || configuredMethod == "auto-safe" ||
+            configuredMethod == "auto") {
+            return "ounce-copy";
+        }
+        return configuredMethod;
+    }
+
+    std::string currentEffectiveHwdec(bool userEnabled, const std::string& configuredMethod) const {
+        return effectiveHwdecMethod(userEnabled, watchdog_.isSwFallbackLatched(), configuredMethod);
+    }
+
+    void onNewPlaybackSession(bool userEnabled, const std::string& configuredMethod,
+                              const std::function<void(const std::string&)>& applyLiveHwdec) {
+        ++sessionGeneration_;
+        ++streamGeneration_;
+        fallbackReopenInProgress_ = false;
+        sawLoadDuringRestart_     = false;
+        restartReloadClaimed_     = false;
+        activeLoadUrl_.clear();
+        activeLoadExtra_.clear();
+        activeBackupUrls_.clear();
+        watchdog_.onNewStream();
+        requestedHwdecMethod_ = currentEffectiveHwdec(userEnabled, configuredMethod);
+        if (applyLiveHwdec) applyLiveHwdec(requestedHwdecMethod_);
+    }
+
+    void onQualityChanged(bool userEnabled, const std::string& configuredMethod,
+                          const std::function<void(const std::string&)>& applyLiveHwdec) {
+        ++streamGeneration_;
+        fallbackReopenInProgress_ = false;
+        sawLoadDuringRestart_     = false;
+        restartReloadClaimed_     = false;
+        watchdog_.onQualityChanged();
+        requestedHwdecMethod_ = currentEffectiveHwdec(userEnabled, configuredMethod);
+        if (applyLiveHwdec) applyLiveHwdec(requestedHwdecMethod_);
+    }
+
+    void onNetworkReconnect(int64_t nowUs) {
+        ++streamGeneration_;
+        watchdog_.onNetworkReconnect(nowUs);
+    }
+
+    void onDecodingPreferenceChanged(bool userEnabled, const std::string& configuredMethod,
+                                     const std::function<void(const std::string&)>& applyLiveHwdec) {
+        ++sessionGeneration_;
+        ++streamGeneration_;
+        fallbackReopenInProgress_ = false;
+        watchdog_.onPreferenceChanged();
+        requestedHwdecMethod_ = currentEffectiveHwdec(userEnabled, configuredMethod);
+        if (applyLiveHwdec) applyLiveHwdec(requestedHwdecMethod_);
+    }
+
+    void recordUrlLoad(const std::string& url, const std::string& extra, const std::string& method) {
+        if (method == "replace") {
+            activeLoadUrl_   = url;
+            activeLoadExtra_ = extra;
+            activeBackupUrls_.clear();
+            sawLoadDuringRestart_ = true;
+        } else if (method == "append") {
+            activeBackupUrls_.emplace_back(url, extra);
+        }
+    }
+
+    void markRestartReloadClaimed() { restartReloadClaimed_ = true; }
+
+    bool isGenerationCurrent(uint64_t expectedSessionGen, uint64_t expectedStreamGen = 0) const {
+        if (expectedSessionGen != 0 && expectedSessionGen != sessionGeneration_) return false;
+        if (expectedStreamGen != 0 && expectedStreamGen != streamGeneration_) return false;
+        return true;
+    }
+
+    bool triggerFallbackReopen(uint64_t expectedSessionGen, uint64_t expectedStreamGen,
+                               OunceSessionWatchdog::SavedPlaybackState state,
+                               const std::function<void()>& doRestart,
+                               const std::function<void(const OunceSessionWatchdog::SavedPlaybackState&)>& replayPrimary,
+                               const std::function<void(const std::string&, const std::string&)>& replayBackup) {
+        if (!isGenerationCurrent(expectedSessionGen, expectedStreamGen)) return false;
+        if (fallbackReopenInProgress_) return false;
+        if (watchdog_.hasPendingRestore()) return false;
+
+        fallbackReopenInProgress_ = true;
+        state.sessionGeneration   = sessionGeneration_;
+        state.streamGeneration    = ++streamGeneration_;
+        if (state.url.empty()) state.url = activeLoadUrl_;
+        if (state.extra.empty()) state.extra = activeLoadExtra_;
+        if (state.backupUrls.empty()) state.backupUrls = activeBackupUrls_;
+
+        watchdog_.armFallbackReopen(state);
+        requestedHwdecMethod_ = "no";
+        sawLoadDuringRestart_ = false;
+        restartReloadClaimed_ = false;
+
+        if (doRestart) doRestart();
+
+        if (!sawLoadDuringRestart_ && !restartReloadClaimed_ && !state.url.empty()) {
+            OunceSessionWatchdog::SavedPlaybackState replayState = state;
+            if (replayState.positionSec > 0 && replayState.extra.find("start=") == std::string::npos) {
+                if (!replayState.extra.empty()) replayState.extra += ",";
+                replayState.extra += "start=" + std::to_string(replayState.positionSec);
+            }
+            if (replayPrimary) replayPrimary(replayState);
+            if (replayBackup) {
+                for (const auto& b : state.backupUrls) {
+                    replayBackup(b.first, b.second);
+                }
+            }
+        }
+
+        fallbackReopenInProgress_ = false;
+        return true;
+    }
+
+    struct RestoreResult {
+        bool applied   = false;
+        bool wasPaused = false;
+        OunceSessionWatchdog::SavedPlaybackState state{};
+    };
+
+    RestoreResult consumePendingRestoreForCurrentSession() {
+        RestoreResult out;
+        OunceSessionWatchdog::SavedPlaybackState saved;
+        if (!watchdog_.consumeRestoreState(saved)) return out;
+        if (saved.sessionGeneration != 0 && saved.sessionGeneration != sessionGeneration_) {
+            return out;
+        }
+        out.applied   = true;
+        out.wasPaused = saved.wasPaused;
+        out.state     = saved;
+        return out;
+    }
+
+    uint64_t sessionGeneration() const { return sessionGeneration_; }
+    uint64_t streamGeneration() const { return streamGeneration_; }
+    bool isFallbackReopenInProgress() const { return fallbackReopenInProgress_; }
+    bool hasPendingRestore() const { return watchdog_.hasPendingRestore(); }
+    int64_t pendingRestorePositionSec() const { return watchdog_.peekRestoreState().positionSec; }
+    const std::string& requestedHwdecMethod() const { return requestedHwdecMethod_; }
+    void setRequestedHwdecMethod(const std::string& method) { requestedHwdecMethod_ = method; }
+    const std::string& activeLoadUrl() const { return activeLoadUrl_; }
+    const std::string& activeLoadExtra() const { return activeLoadExtra_; }
+    const std::vector<std::pair<std::string, std::string>>& activeBackupUrls() const { return activeBackupUrls_; }
+
+    OunceSessionWatchdog& watchdog() { return watchdog_; }
+    const OunceSessionWatchdog& watchdog() const { return watchdog_; }
+
+private:
+    OunceSessionWatchdog watchdog_;
+    uint64_t sessionGeneration_   = 1;
+    uint64_t streamGeneration_    = 1;
+    bool fallbackReopenInProgress_ = false;
+    bool sawLoadDuringRestart_     = false;
+    bool restartReloadClaimed_     = false;
+    std::string requestedHwdecMethod_ = "no";
+    std::string activeLoadUrl_;
+    std::string activeLoadExtra_;
+    std::vector<std::pair<std::string, std::string>> activeBackupUrls_;
 };
 
 }  // namespace wili

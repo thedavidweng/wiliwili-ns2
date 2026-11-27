@@ -139,6 +139,7 @@ PlayerActivity::PlayerActivity(const std::string& bvid, uint64_t cid, int progre
 
         // 请求新视频的数据
         videoDetailPage.cid = 0;  // cid 设置为0，新视频默认打开PV1
+        MPVCore::instance().onNewPlaybackSession();
         this->requestVideoInfo(videoData.bvid);
     });
 }

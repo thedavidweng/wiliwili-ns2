@@ -263,25 +263,38 @@ void VideoDetail::requestVideoInfo(const std::string& bvid) {
 
 /// 获取视频地址
 void VideoDetail::requestVideoUrl(const std::string& bvid, uint64_t cid, bool requestHistoryInfo) {
-    // 重置MPV
-    MPVCore::instance().reset();
+    // 重置MPV（若处于 SW 回退重开则保留已加载的弹幕与字幕状态）
+    if (!MPVCore::instance().isFallbackReopenInProgress()) {
+        MPVCore::instance().reset();
+    }
+    const uint64_t expectedSessionGen = MPVCore::instance().getSessionGeneration();
+    const uint64_t expectedStreamGen  = MPVCore::instance().getStreamGeneration();
     ASYNC_RETAIN
     brls::Logger::debug("请求视频播放地址: {}/{}/{}", bvid, cid, defaultQuality);
     if (cid == 0) return;
 
     BILI::get_video_url(
         bvid, cid, defaultQuality,
-        [ASYNC_TOKEN](const bilibili::VideoUrlResult& result) {
-            brls::sync([ASYNC_TOKEN, result]() {
+        [ASYNC_TOKEN, expectedSessionGen, expectedStreamGen](const bilibili::VideoUrlResult& result) {
+            brls::sync([ASYNC_TOKEN, result, expectedSessionGen, expectedStreamGen]() {
                 ASYNC_RELEASE
+                if (MPVCore::instance().getSessionGeneration() != expectedSessionGen ||
+                    MPVCore::instance().getStreamGeneration() != expectedStreamGen) {
+                    brls::Logger::debug("Ignore stale video url response");
+                    return;
+                }
                 this->videoUrlResult = result;
                 this->onVideoPlayUrl(result);
             });
         },
-        [ASYNC_TOKEN](BILI_ERR) {
+        [ASYNC_TOKEN, expectedSessionGen, expectedStreamGen](BILI_ERR) {
             brls::Logger::error("{}", error);
-            brls::sync([ASYNC_TOKEN, error]() {
+            brls::sync([ASYNC_TOKEN, error, expectedSessionGen, expectedStreamGen]() {
                 ASYNC_RELEASE
+                if (MPVCore::instance().getSessionGeneration() != expectedSessionGen ||
+                    MPVCore::instance().getStreamGeneration() != expectedStreamGen) {
+                    return;
+                }
                 this->onError("请求视频地址失败\n" + error);
             });
         });
@@ -299,25 +312,38 @@ void VideoDetail::requestVideoUrl(const std::string& bvid, uint64_t cid, bool re
 
 /// 获取番剧地址
 void VideoDetail::requestSeasonVideoUrl(const std::string& bvid, uint64_t cid, bool requestHistoryInfo) {
-    // 重置MPV
-    MPVCore::instance().reset();
+    // 重置MPV（若处于 SW 回退重开则保留已加载的弹幕与字幕状态）
+    if (!MPVCore::instance().isFallbackReopenInProgress()) {
+        MPVCore::instance().reset();
+    }
+    const uint64_t expectedSessionGen = MPVCore::instance().getSessionGeneration();
+    const uint64_t expectedStreamGen  = MPVCore::instance().getStreamGeneration();
 
     ASYNC_RETAIN
     brls::Logger::debug("请求番剧视频播放地址: {}", cid);
     BILI::get_season_url(
         cid, defaultQuality,
-        [ASYNC_TOKEN](const bilibili::SeasonUrlResult& result) {
-            brls::sync([ASYNC_TOKEN, result]() {
+        [ASYNC_TOKEN, expectedSessionGen, expectedStreamGen](const bilibili::SeasonUrlResult& result) {
+            brls::sync([ASYNC_TOKEN, result, expectedSessionGen, expectedStreamGen]() {
                 ASYNC_RELEASE
+                if (MPVCore::instance().getSessionGeneration() != expectedSessionGen ||
+                    MPVCore::instance().getStreamGeneration() != expectedStreamGen) {
+                    brls::Logger::debug("Ignore stale season video url response");
+                    return;
+                }
                 brls::Logger::debug("BILI::get_video_url");
                 this->videoUrlResult = result.video_info;
                 this->onVideoPlayUrl(this->videoUrlResult);
             });
         },
-        [ASYNC_TOKEN](BILI_ERR) {
+        [ASYNC_TOKEN, expectedSessionGen, expectedStreamGen](BILI_ERR) {
             brls::Logger::error("{}", error);
-            brls::sync([ASYNC_TOKEN, error]() {
+            brls::sync([ASYNC_TOKEN, error, expectedSessionGen, expectedStreamGen]() {
                 ASYNC_RELEASE
+                if (MPVCore::instance().getSessionGeneration() != expectedSessionGen ||
+                    MPVCore::instance().getStreamGeneration() != expectedStreamGen) {
+                    return;
+                }
                 this->onError("请求视频地址失败\n" + error);
             });
         });

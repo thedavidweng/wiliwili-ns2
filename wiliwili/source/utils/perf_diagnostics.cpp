@@ -102,8 +102,10 @@ void PerfDiagnostics::updatePlaybackMetadata(int sourceQn, int decodedWidth, int
 
 void PerfDiagnostics::setPipelineTelemetry(const std::string& decodePath, const std::string& frameTransferPath,
                                            const std::string& gpuRenderBackend,
-                                           const std::string& presentationPacing) {
+                                           const std::string& presentationPacing,
+                                           const std::string& requestedHwdec) {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (!requestedHwdec.empty()) requestedHwdec_ = requestedHwdec;
     decodePath_         = decodePath.empty() ? "software" : decodePath;
     frameTransferPath_  = frameTransferPath.empty() ? "sw-decode" : frameTransferPath;
     gpuRenderBackend_   = gpuRenderBackend.empty() ? "GLES3 FBO" : gpuRenderBackend;
@@ -166,6 +168,7 @@ PerfSnapshot PerfDiagnostics::snapshot() {
     snap.docked            = docked_;
     snap.decoderName       = decoderName_;
     snap.transferMode      = transferMode_;
+    snap.requestedHwdec    = requestedHwdec_;
     snap.decodePath        = decodePath_;
     snap.frameTransferPath = frameTransferPath_;
     snap.gpuRenderBackend  = gpuRenderBackend_;
@@ -189,15 +192,15 @@ std::string PerfDiagnostics::formatSanitizedSummary(const PerfSnapshot& snap) {
         "ui_fps={:.1f} ui_p50_ms={:.2f} ui_p95_ms={:.2f} ui_p99_ms={:.2f} missed={} delayed={} "
         "video_p50_ms={:.2f} video_p95_ms={:.2f} video_p99_ms={:.2f} "
         "source_qn={} decoded={}x{} render={}x{} output={}x{}{} refresh={}Hz{} "
-        "decoder={} transfer={} decode_path={} frame_transfer={} render_backend={} pacing={} "
+        "decoder={} transfer={} hwdec_req={} decode_path={} frame_transfer={} render_backend={} pacing={} "
         "avsync_ms={:.2f} cache_sec={:.1f} cache_rate_mbps={:.2f} "
         "drop_dec={} drop_out={} mem_mb={:.1f} peak_mem_mb={:.1f} startup_ms={} player_open_ms={}",
         snap.ui.fps, snap.ui.p50Us / 1000.0, snap.ui.p95Us / 1000.0, snap.ui.p99Us / 1000.0, snap.ui.missedFrames,
         snap.ui.delayedFrames, snap.videoRender.p50Us / 1000.0, snap.videoRender.p95Us / 1000.0,
         snap.videoRender.p99Us / 1000.0, snap.sourceQn, snap.decodedWidth, snap.decodedHeight, snap.renderWidth,
         snap.renderHeight, snap.outputWidth, snap.outputHeight, snap.docked ? "_docked" : "_handheld",
-        snap.nominalRefreshHz, snap.vrr ? "_vrr" : "", snap.decoderName, snap.transferMode, snap.decodePath,
-        snap.frameTransferPath, snap.gpuRenderBackend, snap.presentationPacing, snap.avsyncSec * 1000.0,
+        snap.nominalRefreshHz, snap.vrr ? "_vrr" : "", snap.decoderName, snap.transferMode, snap.requestedHwdec,
+        snap.decodePath, snap.frameTransferPath, snap.gpuRenderBackend, snap.presentationPacing, snap.avsyncSec * 1000.0,
         snap.cacheDurationSec, snap.cacheInputRateMBps, snap.decoderDrops, snap.outputDrops,
         snap.currentMemoryKb / 1024.0, snap.peakMemoryKb / 1024.0, snap.startupMs, snap.playerOpenMs);
     if (snap.ounceInit.seen) {

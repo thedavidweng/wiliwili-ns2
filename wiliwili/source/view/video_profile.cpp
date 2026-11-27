@@ -61,9 +61,10 @@ void VideoProfile::update() {
     const std::string renderBackend = "GL-FBO";
 #endif
     const std::string pacingName = "FIFO-blk0";
+    const std::string reqHwdec   = mpvCore->getRequestedHwdecOption();
 
     auto& perf = wili::PerfDiagnostics::instance();
-    perf.setPipelineTelemetry(decodePathName, transferPathName, renderBackend, pacingName);
+    perf.setPipelineTelemetry(decodePathName, transferPathName, renderBackend, pacingName, reqHwdec);
     if (perf.isEnabled()) {
         const wili::PerfSnapshot current = perf.snapshot();
         const int outW = current.outputWidth > 0 ? current.outputWidth : renderW;
@@ -82,7 +83,8 @@ void VideoProfile::update() {
         brls::Application::contentHeight));
     labelVideoCodec->setText(mpvCore->getString("video-codec"));
     labelVideoPixel->setText(mpvCore->getString("video-params/pixelformat"));
-    labelVideoHW->setText(fmt::format("{} | {} | {} | {}", hwdec.empty() ? "no(sw)" : hwdec, snap.frameTransferPath,
+    labelVideoHW->setText(fmt::format("req:{} active:{} | {} | {} | {}", snap.requestedHwdec,
+                                      hwdec.empty() ? "no(sw)" : hwdec, snap.frameTransferPath,
                                       snap.gpuRenderBackend, snap.presentationPacing));
     labelVideoBitrate->setText(std::to_string(mpvCore->getInt("video-bitrate") / 1024) + "kbps");
     if (perf.isEnabled() && snap.ui.count > 0) {

@@ -1319,22 +1319,32 @@ void test_backpressure_stall_timeouts_and_watchdog_recovery() {
     }
 
     // (e) OunceSessionWatchdog stall/recovery & separated telemetry checks
-    wili::OunceSessionWatchdog wd(1000000);  // 1s test threshold
+    wili::OunceSessionWatchdog wd(1000000, 3000000);  // 1s active stall, 3s cold startup threshold
     wd.onHwdecSelected("ounce-copy");
     CHECK(wd.isHwActive() && wd.wasHwAttempted());
 
-    // Buffering / paused / seeking must NEVER trip stall detection
-    CHECK(wd.onPlaybackSample(10.0, 100, false, false, false, false, 1000000) ==
-          wili::OunceSessionWatchdog::Action::None);
-    CHECK(wd.onPlaybackSample(10.0, 100, true, false, false, false, 5000000) ==
-          wili::OunceSessionWatchdog::Action::None);
-    CHECK(wd.onPlaybackSample(10.0, 100, false, false, true, false, 10000000) ==
-          wili::OunceSessionWatchdog::Action::None);
-    CHECK(wd.onPlaybackSample(10.0, 100, false, true, false, false, 15000000) ==
+    // First sample establishes decoder output baseline (100 frames => firstFrameProduced = true)
+    CHECK(wd.onDecoderProgressSample(100, false, false, false, false, 1000000) ==
           wili::OunceSessionWatchdog::Action::None);
 
-    // Active playback without progress for >1s -> trips fallback
-    CHECK(wd.onPlaybackSample(10.0, 100, false, false, false, false, 16500000) ==
+    // Buffering / paused / seeking / eof must NEVER trip stall detection
+    CHECK(wd.onDecoderProgressSample(100, true, false, false, false, 5000000) ==
+          wili::OunceSessionWatchdog::Action::None);
+    CHECK(wd.onDecoderProgressSample(100, false, false, true, false, 10000000) ==
+          wili::OunceSessionWatchdog::Action::None);
+    CHECK(wd.onDecoderProgressSample(100, false, true, false, false, 15000000) ==
+          wili::OunceSessionWatchdog::Action::None);
+    CHECK(wd.onDecoderProgressSample(100, false, false, false, true, 16000000) ==
+          wili::OunceSessionWatchdog::Action::None);
+
+    // First active sample after suspension resets wall baseline before measuring stall
+    CHECK(wd.onDecoderProgressSample(100, false, false, false, false, 16100000) ==
+          wili::OunceSessionWatchdog::Action::None);
+    CHECK(wd.onDecoderProgressSample(100, false, false, false, false, 16600000) ==
+          wili::OunceSessionWatchdog::Action::None);
+
+    // Active playback without decoded-frame progress for >= 1s -> trips fallback
+    CHECK(wd.onDecoderProgressSample(100, false, false, false, false, 17200000) ==
           wili::OunceSessionWatchdog::Action::FallbackToSoftware);
     CHECK(wd.isSwFallbackLatched() && wd.wasFallbackTriggered());
 
@@ -1342,8 +1352,24 @@ void test_backpressure_stall_timeouts_and_watchdog_recovery() {
     CHECK(wd.onHwRuntimeError() == wili::OunceSessionWatchdog::Action::None);
     CHECK(wd.onStreamFailure(false, 10, 600) == wili::OunceSessionWatchdog::Action::None);
 
-    // Preserved playback state across reopen
-    wd.armFallbackReopen({42, 1.5, "2", "1", false});
+    // Cold startup before first frame uses startupTimeoutUs (3s) rather than 1s stallTimeoutUs
+    wili::OunceSessionWatchdog coldWd(1000000, 3000000);
+    coldWd.onHwdecSelected("ounce-copy");
+    CHECK(coldWd.onDecoderProgressSample(0, false, false, false, false, 1000000) ==
+          wili::OunceSessionWatchdog::Action::None);
+    CHECK(coldWd.onDecoderProgressSample(0, false, false, false, false, 2500000) ==
+          wili::OunceSessionWatchdog::Action::None);
+    CHECK(coldWd.onDecoderProgressSample(0, false, false, false, false, 4100000) ==
+          wili::OunceSessionWatchdog::Action::FallbackToSoftware);
+
+    // Preserved playback state across reopen + reconnect vs quality change latch semantics
+    wili::OunceSessionWatchdog::SavedPlaybackState state;
+    state.positionSec = 42;
+    state.speed       = 1.5;
+    state.aid         = "2";
+    state.sid         = "1";
+    state.wasPaused   = false;
+    wd.armFallbackReopen(state);
     wili::OunceSessionWatchdog::SavedPlaybackState restored;
     CHECK(wd.consumeRestoreState(restored));
     CHECK_EQ(restored.positionSec, int64_t(42));
@@ -1352,9 +1378,55 @@ void test_backpressure_stall_timeouts_and_watchdog_recovery() {
     CHECK_EQ(restored.sid, std::string("1"));
     CHECK(!wd.consumeRestoreState(restored));
 
+    wd.onNetworkReconnect(18000000);
+    CHECK(wd.isSwFallbackLatched());
+    wd.onQualityChanged();
+    CHECK(!wd.isSwFallbackLatched());
+
     // Subsequent stream reevaluates hardware eligibility cleanly
     wd.onNewStream();
     CHECK(!wd.isSwFallbackLatched() && !wd.wasFallbackTriggered());
+
+    // OuncePlaybackController effective hwdec policy, replay, and restore checks
+    CHECK_EQ(wili::OuncePlaybackController::effectiveHwdecMethod(false, false, "ounce-copy"), std::string("no"));
+    CHECK_EQ(wili::OuncePlaybackController::effectiveHwdecMethod(true, true, "ounce-copy"), std::string("no"));
+    CHECK_EQ(wili::OuncePlaybackController::effectiveHwdecMethod(true, false, "auto-safe"),
+             std::string("ounce-copy"));
+
+    wili::OuncePlaybackController ctrl(1000000, 3000000);
+    std::string appliedMethod;
+    ctrl.onNewPlaybackSession(true, "auto-safe", [&](const std::string& m) { appliedMethod = m; });
+    CHECK_EQ(appliedMethod, std::string("ounce-copy"));
+    const uint64_t sessGen   = ctrl.sessionGeneration();
+    const uint64_t streamGen = ctrl.streamGeneration();
+    ctrl.recordUrlLoad("https://example.invalid/main.m4s", "audio=2", "replace");
+    ctrl.recordUrlLoad("https://example.invalid/backup.m4s", "", "append");
+
+    bool didRestart       = false;
+    bool replayedPrimary  = false;
+    std::string replayExt;
+    int replayedBackups   = 0;
+    wili::OunceSessionWatchdog::SavedPlaybackState reopenState;
+    reopenState.positionSec = 42;
+    reopenState.speed       = 1.25;
+    reopenState.aid         = "2";
+    reopenState.sid         = "1";
+    CHECK(ctrl.triggerFallbackReopen(
+        sessGen, streamGen, reopenState, [&]() { didRestart = true; },
+        [&](const wili::OunceSessionWatchdog::SavedPlaybackState& rs) {
+            replayedPrimary = true;
+            replayExt       = rs.extra;
+        },
+        [&](const std::string&, const std::string&) { ++replayedBackups; }));
+    CHECK(didRestart);
+    CHECK(replayedPrimary);
+    CHECK(replayExt.find("start=42") != std::string::npos);
+    CHECK_EQ(replayedBackups, 1);
+    CHECK_EQ(ctrl.requestedHwdecMethod(), std::string("no"));
+    CHECK_EQ(ctrl.streamGeneration(), streamGen + 1);
+    const auto restoreRes = ctrl.consumePendingRestoreForCurrentSession();
+    CHECK(restoreRes.applied);
+    CHECK_EQ(restoreRes.state.positionSec, int64_t(42));
 
     // Separated 5-way transfer terminology verification
     CHECK_EQ(std::string(wili::hwdecTransferPathName(wili::classifyTransferPath("ounce-copy"))),

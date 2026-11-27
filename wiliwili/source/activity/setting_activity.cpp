@@ -740,9 +740,7 @@ void SettingActivity::onContentAvailable() {
                    [](bool value) {
                        ProgramConfig::instance().setSettingItem(SettingItem::PLAYER_HWDEC, value);
                        if (MPVCore::HARDWARE_DEC == value) return;
-                       MPVCore::HARDWARE_DEC = value;
-                       MPVCore::instance().onNewPlaybackSession();
-                       MPVCore::instance().restart();
+                       MPVCore::instance().onDecodingPreferenceChanged(value);
                    });
 #endif
 

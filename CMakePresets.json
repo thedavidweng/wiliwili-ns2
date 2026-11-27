@@ -41,12 +41,35 @@
       "name": "switch2-release",
       "inherits": "base",
       "displayName": "Switch 2 (Release)",
-      "description": "NS2 NRO with libounce and OunceVK (EGL/OpenGL ES 3.1 through Zink), software decoding, no NSP forwarder, no deko3d and no RomFS C++ embedding.",
+      "description": "NS2 NRO with libounce and OunceVK (EGL/OpenGL ES 3.1 through Zink), software decoding default, no NSP forwarder, no deko3d and no RomFS C++ embedding.",
       "toolchainFile": "$env{DEVKITPRO}/libounce/cmake/Switch2.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "PLATFORM_SWITCH": "ON",
         "PLATFORM_SWITCH2": "ON",
+        "WILIWILI_SWITCH2_EXPERIMENTAL_HWDEC": "OFF",
+        "BUILTIN_NSP": "OFF",
+        "USE_DEKO3D": "OFF",
+        "USE_SDL2": "ON",
+        "USE_EGL": "ON",
+        "USE_GLES2": "OFF",
+        "USE_GLES3": "ON",
+        "USE_LIBROMFS": "OFF",
+        "CMAKE_C_FLAGS_RELEASE": "-O2 -g -DNDEBUG",
+        "CMAKE_CXX_FLAGS_RELEASE": "-O2 -g -DNDEBUG"
+      }
+    },
+    {
+      "name": "switch2-hwdec-release",
+      "inherits": "base",
+      "displayName": "Switch 2 Experimental Hwdec (Release)",
+      "description": "Isolated NS2 H.264 8-bit <=1080p60 hardware-decode test NRO (wiliwili-NS2-hwdec.nro) with ounce-copy default-on for Gate G3 verification.",
+      "toolchainFile": "$env{DEVKITPRO}/libounce/cmake/Switch2.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PLATFORM_SWITCH": "ON",
+        "PLATFORM_SWITCH2": "ON",
+        "WILIWILI_SWITCH2_EXPERIMENTAL_HWDEC": "ON",
         "BUILTIN_NSP": "OFF",
         "USE_DEKO3D": "OFF",
         "USE_SDL2": "ON",
@@ -73,6 +96,13 @@
       "configurePreset": "switch2-release",
       "targets": [
         "wiliwili-NS2.nro"
+      ]
+    },
+    {
+      "name": "switch2-hwdec-release",
+      "configurePreset": "switch2-hwdec-release",
+      "targets": [
+        "wiliwili-NS2-hwdec.nro"
       ]
     }
   ],

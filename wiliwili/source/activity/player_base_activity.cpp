@@ -381,8 +381,8 @@ void BasePlayerActivity::setCommonData() {
                 }
                 break;
             case MpvEventEnum::RESTART:
-                MPVCore::instance().onNewPlaybackSession();
-            this->updateVideoLink();
+                MPVCore::instance().markRestartReloadClaimed();
+                this->updateVideoLink();
                 break;
             default:
                 break;
@@ -411,6 +411,7 @@ void BasePlayerActivity::setCommonData() {
         } else if (event == "REQUEST_CAST_URL") {
             this->requestCastUrl();
         } else if (event == "SWITCH2_NETWORK_RECOVERED") {
+            MPVCore::instance().onNetworkReconnect();
             playbackRecovery.onNetworkRecovered(brls::getCPUTimeUsec());
             this->attemptPlaybackRecovery();
         }
@@ -464,10 +465,12 @@ void BasePlayerActivity::showCoinDialog(uint64_t aid) {
 }
 
 void BasePlayerActivity::schedulePlaybackRecovery(int delayMs) {
+    const uint64_t expectedSessionGen = MPVCore::instance().getSessionGeneration();
     ASYNC_RETAIN
-    brls::Threading::delay(delayMs, [ASYNC_TOKEN]() {
-        brls::sync([ASYNC_TOKEN]() {
+    brls::Threading::delay(delayMs, [ASYNC_TOKEN, expectedSessionGen]() {
+        brls::sync([ASYNC_TOKEN, expectedSessionGen]() {
             ASYNC_RELEASE
+            if (MPVCore::instance().getSessionGeneration() != expectedSessionGen) return;
             this->attemptPlaybackRecovery();
         });
     });
@@ -489,7 +492,10 @@ void BasePlayerActivity::attemptPlaybackRecovery() {
 
 void BasePlayerActivity::updateVideoLink() {
     // 设置视频加载后跳转的时间
-    setProgress(MPVCore::instance().video_progress);
+    const int64_t resumePos = MPVCore::instance().hasPendingRestoreState()
+                                  ? MPVCore::instance().getFallbackResumePosition()
+                                  : MPVCore::instance().video_progress;
+    setProgress(static_cast<int>(resumePos));
 
     // dash
     if (!this->videoUrlResult.dash.video.empty()) {
@@ -528,7 +534,7 @@ void BasePlayerActivity::setVideoQuality() {
                 return;
             }
 
-            MPVCore::instance().onNewPlaybackSession();
+            MPVCore::instance().onQualityChanged();
             this->updateVideoLink();
         },
         getQualityIndex());

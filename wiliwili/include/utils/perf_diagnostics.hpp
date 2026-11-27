@@ -97,11 +97,12 @@ struct PerfSnapshot {
     int outputHeight           = 0;
     bool docked                = false;
     bool vrr                   = false;
-    std::string decoderName    = "software";
-    std::string transferMode   = "GLES3 FBO";
-    std::string decodePath     = "software";
-    std::string frameTransferPath = "sw-decode";
-    std::string gpuRenderBackend  = "GLES3 FBO";
+    std::string decoderName        = "software";
+    std::string transferMode       = "GLES3 FBO";
+    std::string requestedHwdec     = "no";
+    std::string decodePath         = "software";
+    std::string frameTransferPath  = "sw-decode";
+    std::string gpuRenderBackend   = "GLES3 FBO";
     std::string presentationPacing = "FIFO blk=0";
     OunceInitTelemetry ounceInit{};
     double avsyncSec           = 0.0;
@@ -141,7 +142,8 @@ public:
                                 const std::string& transferMode, double avsyncSec, double cacheDurationSec,
                                 double cacheInputRateMBps, int64_t decoderDrops, int64_t outputDrops);
     void setPipelineTelemetry(const std::string& decodePath, const std::string& frameTransferPath,
-                              const std::string& gpuRenderBackend, const std::string& presentationPacing);
+                              const std::string& gpuRenderBackend, const std::string& presentationPacing,
+                              const std::string& requestedHwdec = "");
     void setOunceInitTelemetry(const OunceInitTelemetry& init);
 
     void resetSamples();
@@ -169,8 +171,9 @@ private:
     int outputWidth_          = 0;
     int outputHeight_         = 0;
     bool docked_              = false;
-    std::string decoderName_  = "software";
-    std::string transferMode_ = "GLES3 FBO";
+    std::string decoderName_        = "software";
+    std::string transferMode_       = "GLES3 FBO";
+    std::string requestedHwdec_     = "no";
     std::string decodePath_         = "software";
     std::string frameTransferPath_  = "sw-decode";
     std::string gpuRenderBackend_   = "GLES3 FBO";

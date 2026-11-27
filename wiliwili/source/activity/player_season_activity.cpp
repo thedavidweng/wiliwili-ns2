@@ -49,6 +49,7 @@ PlayerSeasonActivity::PlayerSeasonActivity(const unsigned int id, PGC_ID_TYPE ty
 
         // 因为是手动切换分集，所以将分集进度设置为 0
         t.progress = 0;
+        MPVCore::instance().onNewPlaybackSession();
         this->changeEpisode(t);
     });
 
@@ -82,7 +83,6 @@ void PlayerSeasonActivity::onIndexChange(size_t index) {
         return;
     }
 
-    MPVCore::instance().onNewPlaybackSession();
     this->changeEpisodeEvent.fire(episodeList[index]);
 
     this->changeIndexEvent.fire(index);
@@ -420,6 +420,7 @@ void PlayerSeasonActivity::playSeason(uint64_t season_id) {
     this->recyclingGrid->showSkeleton();
 
     this->setProgress(0);
+    MPVCore::instance().onNewPlaybackSession();
     this->requestData(season_id, PGC_ID_TYPE::SEASON_ID);
 }
 

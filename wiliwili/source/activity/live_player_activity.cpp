@@ -83,6 +83,7 @@ LiveActivity::LiveActivity(int roomid, const std::string& name, const std::strin
 void LiveActivity::setCommonData() {
     // 重置播放器
     MPVCore::instance().reset();
+    MPVCore::instance().onNewPlaybackSession();
 
     // 清空自定义着色器
     ShaderHelper::instance().clearShader(false);
@@ -136,6 +137,7 @@ void LiveActivity::setVideoQuality() {
             "wiliwili/player/quality"_i18n, this->getQualityDescriptionList(),
             [this](int selected) {
                 defaultQuality = liveUrl.accept_qn[selected];
+                MPVCore::instance().onQualityChanged();
                 this->requestData(this->liveData.roomid);
             },
             this->getCurrentQualityIndex());
@@ -376,7 +378,6 @@ void LiveActivity::onLiveData(const bilibili::LiveRoomPlayInfo &result)
 
         // 设置视频链接
         brls::Logger::debug("Live stream url: {}", url);
-        MPVCore::instance().onNewPlaybackSession();
         this->video->setUrl(url);
         return;
     }
@@ -542,10 +543,15 @@ void LiveActivity::onNeedPay(const std::string& msg, const std::string& link, co
 void LiveActivity::retryRequestData() {
     // 每隔一段时间自动重试
     brls::cancelDelay(errorDelayIter);
+    const uint64_t expectedSessionGen = MPVCore::instance().getSessionGeneration();
     ASYNC_RETAIN
-    errorDelayIter = brls::delay(2000, [ASYNC_TOKEN]() {
+    errorDelayIter = brls::delay(2000, [ASYNC_TOKEN, expectedSessionGen]() {
         ASYNC_RELEASE
-        if (!MPVCore::instance().isPlaying()) this->requestData(liveData.roomid);
+        if (MPVCore::instance().getSessionGeneration() != expectedSessionGen) return;
+        if (!MPVCore::instance().isPlaying()) {
+            MPVCore::instance().onNetworkReconnect();
+            this->requestData(liveData.roomid);
+        }
     });
 }
 

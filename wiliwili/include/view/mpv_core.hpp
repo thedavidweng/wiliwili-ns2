@@ -5,6 +5,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <atomic>
 #include <vector>
 #include <string>
 #include <cstdlib>
@@ -305,13 +306,42 @@ public:
     void reset();
 
     /**
-     * Reset per-stream Switch 2 hwdec fallback latch when opening a new stream.
+     * Reset per-stream Switch 2 hwdec fallback latch when opening a genuinely new
+     * logical video/episode/channel, and reapply effective hwdec to live mpv.
      */
     void onNewPlaybackSession();
 
+    /**
+     * Reevaluate hwdec when switching bitrate/quality stream within a video.
+     */
+    void onQualityChanged();
+
+    /**
+     * Reset stall detection baseline on network reconnection while retaining
+     * any active session software-fallback latch.
+     */
+    void onNetworkReconnect();
+
+    /**
+     * Apply explicit user toggle of hardware decoding preference.
+     */
+    void onDecodingPreferenceChanged(bool enabled);
+
+    void applyEffectiveHwdecOption();
+
+    void markRestartReloadClaimed();
+
+    uint64_t getSessionGeneration() const { return ounceController.sessionGeneration(); }
+    uint64_t getStreamGeneration() const { return ounceController.streamGeneration(); }
+    bool isFallbackReopenInProgress() const { return ounceController.isFallbackReopenInProgress(); }
+    bool hasPendingRestoreState() const { return ounceController.hasPendingRestore(); }
+    int64_t getFallbackResumePosition() const { return ounceController.pendingRestorePositionSec(); }
+    std::string getRequestedHwdecOption() const { return ounceController.requestedHwdecMethod(); }
+
     bool isEffectiveHwdecEnabled() const;
 
-    void triggerOunceFallbackReopen(const char *reason);
+    void triggerOunceFallbackReopen(const char *reason, uint64_t expectedSessionGen = 0,
+                                    uint64_t expectedStreamGen = 0);
 
     const wili::OunceInitTelemetry &getOunceTelemetry() const { return ounceTelemetry; }
 
@@ -539,14 +569,9 @@ private:
 
     static void on_wakeup(void *self);
 
-    wili::OunceSessionWatchdog ounceWatchdog;
+    wili::OuncePlaybackController ounceController;
     wili::OunceInitTelemetry ounceTelemetry;
-    std::string activeLoadUrl;
-    std::string activeLoadExtra;
-#ifdef __SWITCH2__
-    bool ounceFallbackReopenInProgress = false;
-    bool sawLoadDuringRestart        = false;
-#endif
+    std::atomic<int64_t> decodedFrameCounter{0};
     bool pausedForCacheState           = false;
     int64_t lastWatchdogCheckUs        = 0;
 };
