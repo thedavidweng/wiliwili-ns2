@@ -5,6 +5,7 @@
 #   scripts/switch2/build.sh configure   cmake --preset switch2-release
 #   scripts/switch2/build.sh build       cmake --build --preset switch2-release
 #   scripts/switch2/build.sh audit       audit the NRO, RomFS and linker map
+#   scripts/switch2/build.sh package     bundle NRO, SD zip, debug symbols & provenance
 #   scripts/switch2/build.sh <command>   run any command in the container
 #
 # WILIWILI_SWITCH2_IMAGE overrides the image name, WILIWILI_SWITCH2_JOBS the
@@ -35,8 +36,9 @@ case "${1:-}" in
                    cmake --build --preset switch2-release -j "${jobs}"'
         ;;
     audit) run sh /src/scripts/switch2/audit-nro.sh /src/build/switch2-release ;;
+    package) sh "${root}/scripts/switch2/package-release.sh" "${root}/build/switch2-release" "${root}/dist" ;;
     "")
-        echo "usage: $0 {image|configure|build|audit|<command>}" >&2
+        echo "usage: $0 {image|configure|build|audit|package|<command>}" >&2
         exit 1
         ;;
     *)

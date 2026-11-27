@@ -83,11 +83,7 @@ jobs:
             sh -c 'cmake --preset switch2-release && cmake --build --preset switch2-release -j"$(nproc)" && sh scripts/switch2/audit-nro.sh build/switch2-release'
 
       - name: Package Switch 2 artifacts and checksums
-        run: |
-          mkdir -p dist/switch/wiliwili-ns2
-          cp build/switch2-release/wiliwili-NS2.nro dist/wiliwili-NS2.nro
-          cp build/switch2-release/wiliwili-NS2.nro dist/switch/wiliwili-ns2/wiliwili-NS2.nro
-          (cd dist && sha256sum wiliwili-NS2.nro > SHA256SUMS)
+        run: sh scripts/switch2/package-release.sh build/switch2-release dist --audit-passed
 
       - name: Upload Switch 2 NRO artifact
         uses: actions/upload-artifact@v4
@@ -95,4 +91,12 @@ jobs:
           name: wiliwili-NS2-nro
           path: |
             dist/wiliwili-NS2.nro
+            dist/wiliwili-NS2-sd.zip
+            dist/BUILDINFO.json
             dist/SHA256SUMS
+
+      - name: Upload Switch 2 debug symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiliwili-NS2-debug-symbols
+          path: dist/wiliwili-NS2-debug-symbols.tar.gz

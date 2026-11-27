@@ -140,3 +140,8 @@ target_link_libraries(wiliwili_multi_cdn_test PRIVATE CURL::libcurl Threads::Thr
 target_compile_definitions(wiliwili_multi_cdn_test PRIVATE
         WILIWILI_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 add_test(NAME multi_cdn COMMAND wiliwili_multi_cdn_test)
+
+# Switch 2 release packaging script: SD zip, separate debug symbols tarball,
+# BUILDINFO.json, and SHA256SUMS provenance verification (#20).
+add_test(NAME switch2_release_package
+        COMMAND sh ${PROJECT_SOURCE_DIR}/tests/switch2_package_test.sh ${PROJECT_SOURCE_DIR})
