@@ -342,9 +342,14 @@ void ProgramConfig::setProgramConfig(const ProgramConfig& conf) {
 
 void ProgramConfig::setCookie(const Cookie& data) {
     this->cookie = data;
-    if (data.empty()) this->refreshToken.clear();
+    if (data.empty()) {
+        this->refreshToken.clear();
+        BILI::clearCookies();
+    }
     this->save();
 }
+
+void ProgramConfig::clearSession() { this->setCookie({}); }
 
 Cookie ProgramConfig::getCookie() {
     // 生成虚假的 buvid3，在获取直播分区时需要此字段

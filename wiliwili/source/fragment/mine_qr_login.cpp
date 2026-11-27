@@ -71,7 +71,10 @@ void MineQrLogin::getLoginUrl() {
             this->onLoginUrlChange(url);
             this->checkLogin();
         },
-        [this](BILI_ERR) { this->onError(); });
+        [ASYNC_TOKEN](BILI_ERR) {
+            ASYNC_RELEASE
+            this->onError();
+        });
 }
 
 void MineQrLogin::checkLogin() {
@@ -84,9 +87,9 @@ void MineQrLogin::checkLogin() {
     bilibili::BilibiliClient::get_login_info_v2(
         this->oauthKey, "wiliwili - " + APPVersion::instance().getPlatform(), ProgramConfig::instance().getDeviceID(),
         [ASYNC_TOKEN](bilibili::LoginInfo info) {
-            this->loginCb.fire(info);
-            brls::Logger::debug("return code:{}", (int)info);
             ASYNC_RELEASE
+            brls::Logger::debug("return code:{}", (int)info);
+            this->loginCb.fire(info);
             switch (info) {
                 case bilibili::LoginInfo::OAUTH_KEY_TIMEOUT:
                 case bilibili::LoginInfo::OAUTH_KEY_ERROR:
@@ -120,5 +123,9 @@ void MineQrLogin::checkLogin() {
                     brls::Logger::error("return unknown code:{}", (int)info);
                     break;
             }
+        },
+        [ASYNC_TOKEN](BILI_ERR) {
+            ASYNC_RELEASE
+            this->onError();
         });
 }

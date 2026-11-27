@@ -32,11 +32,21 @@ std::string BilibiliClient::genRandomBuvid3() {
 // This callback is called when the BilibiliClient updates the cookie
 void BilibiliClient::init(Cookies& data, std::function<void(Cookies, std::string)> callback) {
     BilibiliClient::writeCookiesCallback = std::move(callback);
+    HTTP::COOKIES                        = {false};
     for (const auto& cookie : data) {
         HTTP::COOKIES.emplace_back({cookie.first, cookie.second});
     }
-    // Manually set cookie, because cpr's cookie algorithm does not conform to the rfc6265
-    HTTP::HEADERS["cookie"] = HTTP::getEncodedCookie(HTTP::COOKIES);
+    if (data.empty()) {
+        HTTP::HEADERS.erase("cookie");
+    } else {
+        // Manually set cookie, because cpr's cookie algorithm does not conform to the rfc6265
+        HTTP::HEADERS["cookie"] = HTTP::getEncodedCookie(HTTP::COOKIES);
+    }
+}
+
+void BilibiliClient::clearCookies() {
+    HTTP::COOKIES = {false};
+    HTTP::HEADERS.erase("cookie");
 }
 
 void BilibiliClient::setProxy(const std::string& httpProxy, const std::string& httpsProxy) {

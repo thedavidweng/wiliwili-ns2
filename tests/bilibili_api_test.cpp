@@ -3,11 +3,16 @@
 #include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
 
+#include "bilibili.h"
 #include "bilibili/api.h"
+#include "bilibili/result/dynamic_video.h"
 #include "bilibili/result/home_live_result.h"
 #include "bilibili/result/home_pgc_season_result.h"
 #include "bilibili/result/home_result.h"
+#include "bilibili/result/live_danmaku_result.h"
+#include "bilibili/result/mine_collection_result.h"
 #include "bilibili/result/mine_history_result.h"
+#include "bilibili/result/mine_later_result.h"
 #include "bilibili/result/mine_result.h"
 #include "bilibili/result/search_result.h"
 #include "bilibili/result/video_detail_result.h"
@@ -257,12 +262,294 @@ void check_auth_history_and_interactions() {
     CHECK_EQ(live.playurl_info.playurl.stream.size(), size_t(1));
 }
 
+void check_session_hygiene_and_extended_models() {
+    // 1. Cookie / session hygiene (#12): init resets prior cookies and clearCookies strips header state.
+    bilibili::Cookies demoCookies = {{"DedeUserID", "123456"}, {"demo_session", "placeholder"}};
+    bilibili::BilibiliClient::init(demoCookies, nullptr);
+    const std::string encodedOnce = bilibili::HTTP::getEncodedCookie(bilibili::HTTP::COOKIES);
+    CHECK(bilibili::HTTP::HEADERS.count("cookie") == size_t(1));
+    CHECK(encodedOnce.find("DedeUserID=123456") != std::string::npos);
+
+    bilibili::BilibiliClient::init(demoCookies, nullptr);
+    CHECK_EQ(bilibili::HTTP::getEncodedCookie(bilibili::HTTP::COOKIES), encodedOnce);
+
+    bilibili::BilibiliClient::clearCookies();
+    CHECK_EQ(bilibili::HTTP::HEADERS.count("cookie"), size_t(0));
+    CHECK(bilibili::HTTP::getEncodedCookie(bilibili::HTTP::COOKIES).empty());
+
+    bilibili::BilibiliClient::init(demoCookies, nullptr);
+    bilibili::Cookies emptyCookies;
+    bilibili::BilibiliClient::init(emptyCookies, nullptr);
+    CHECK_EQ(bilibili::HTTP::HEADERS.count("cookie"), size_t(0));
+    CHECK(bilibili::HTTP::getEncodedCookie(bilibili::HTTP::COOKIES).empty());
+
+    // 2. Unauthenticated -101 envelope maps cleanly to error callback (#12, #17, #19).
+    bool userOk   = false;
+    int errCode   = 0;
+    std::string errMsg;
+    bilibili::HTTP::parseJson<bilibili::UserResult>(
+        makeJsonResponse(R"({"code":-101,"message":"not logged in"})"),
+        [&](const auto&) { userOk = true; },
+        [&](const std::string& msg, int code) {
+            errMsg  = msg;
+            errCode = code;
+        });
+    CHECK(!userOk);
+    CHECK_EQ(errCode, -101);
+    CHECK_EQ(errMsg, std::string("not logged in"));
+
+    // 3. Collection list (#17, #19).
+    const std::string collectionJson = R"({
+        "code": 0,
+        "message": "0",
+        "data": {
+            "count": 1,
+            "has_more": true,
+            "list": [{
+                "id": 1001,
+                "fid": 1001,
+                "type": 11,
+                "cover": "https://i0.hdslb.com/bfs/archive/coll.jpg",
+                "title": "Saved Clips",
+                "media_count": 3,
+                "upper": {"mid": 999, "name": "DemoCreator", "face": "https://i0.hdslb.com/bfs/face/demo.jpg"}
+            }]
+        }
+    })";
+    bilibili::CollectionListResultWrapper collections;
+    bool ok = false;
+    bilibili::HTTP::parseJson<bilibili::CollectionListResultWrapper>(
+        makeJsonResponse(collectionJson), [&](const auto& res) {
+            collections = res;
+            ok          = true;
+        });
+    CHECK(ok);
+    CHECK(collections.has_more);
+    CHECK_EQ(collections.list.size(), size_t(1));
+    if (collections.list.size() == 1) {
+        CHECK_EQ(collections.list[0].title, std::string("Saved Clips"));
+        CHECK_EQ(collections.list[0].upper.name, std::string("DemoCreator"));
+    }
+
+    // 4. Watch later empty wrapper (#17, #19).
+    bilibili::WatchLaterListWrapper later;
+    ok = false;
+    bilibili::HTTP::parseJson<bilibili::WatchLaterListWrapper>(
+        makeJsonResponse(R"({"code":0,"message":"0","data":{"count":0,"list":[]}})"),
+        [&](const auto& res) {
+            later = res;
+            ok    = true;
+        });
+    CHECK(ok);
+    CHECK_EQ(later.count, 0);
+    CHECK(later.list.empty());
+
+    // 5. Creator uploaded videos (#18).
+    const std::string uploadedJson = R"({
+        "code": 0,
+        "message": "0",
+        "data": {
+            "page": {"pn": 1, "ps": 20, "count": 1},
+            "list": {
+                "vlist": [{
+                    "comment": 12,
+                    "play": 4567,
+                    "pic": "https://i0.hdslb.com/bfs/archive/up.jpg",
+                    "description": "Demo desc",
+                    "copyright": "1",
+                    "title": "Creator Upload",
+                    "video_review": 8,
+                    "author": "DemoCreator",
+                    "mid": 999,
+                    "created": 1700000100,
+                    "length": "04:20",
+                    "aid": 555666,
+                    "bvid": "BV1xx411c7mD",
+                    "is_charging_arc": false
+                }]
+            }
+        }
+    })";
+    bilibili::UserUploadedVideoResultWrapper uploaded;
+    ok = false;
+    bilibili::HTTP::parseJson<bilibili::UserUploadedVideoResultWrapper>(
+        makeJsonResponse(uploadedJson), [&](const auto& res) {
+            uploaded = res;
+            ok       = true;
+        });
+    CHECK(ok);
+    CHECK_EQ(uploaded.page.count, 1u);
+    CHECK_EQ(uploaded.list.size(), size_t(1));
+    if (uploaded.list.size() == 1) {
+        CHECK_EQ(uploaded.list[0].bvid, std::string("BV1xx411c7mD"));
+        CHECK(!uploaded.list[0].is_charging_arc);
+    }
+
+    // 6. Video comments & relation (#18, #19).
+    const std::string commentsJson = R"({
+        "code": 0,
+        "message": "0",
+        "data": {
+            "upper": {"mid": 999},
+            "cursor": {"all_count": 2, "mode": 3, "next": 2, "prev": 0, "is_end": false, "is_begin": true},
+            "top_replies": [{
+                "ctime": 1700000200,
+                "rpid": 101,
+                "parent": 0,
+                "root": 0,
+                "oid": 555666,
+                "rcount": 1,
+                "like": 15,
+                "action": 0,
+                "replies": null,
+                "member": {
+                    "mid": "999",
+                    "uname": "DemoCreator",
+                    "avatar": "https://i0.hdslb.com/bfs/face/demo.jpg",
+                    "is_senior_member": 1,
+                    "level_info": {"current_level": 6},
+                    "vip": {"nickname_color": ""}
+                },
+                "content": {"message": "Pinned creator note"},
+                "reply_control": {
+                    "sub_reply_entry_text": "1 reply",
+                    "sub_reply_title_text": "1 reply",
+                    "time_desc": "today",
+                    "up_like": true
+                }
+            }],
+            "replies": [{
+                "ctime": 1700000250,
+                "rpid": 102,
+                "parent": 0,
+                "root": 0,
+                "oid": 555666,
+                "rcount": 0,
+                "like": 2,
+                "action": 0,
+                "replies": [],
+                "member": {
+                    "mid": "888",
+                    "uname": "Viewer",
+                    "avatar": "https://i0.hdslb.com/bfs/face/viewer.jpg",
+                    "is_senior_member": 0,
+                    "level_info": {"current_level": 4},
+                    "vip": {"nickname_color": ""}
+                },
+                "content": {"message": "Nice test"},
+                "reply_control": {
+                    "sub_reply_entry_text": "",
+                    "sub_reply_title_text": "",
+                    "time_desc": "today",
+                    "up_like": false
+                }
+            }]
+        }
+    })";
+    bilibili::VideoCommentResultWrapper comments;
+    ok = false;
+    bilibili::HTTP::parseJson<bilibili::VideoCommentResultWrapper>(
+        makeJsonResponse(commentsJson), [&](const auto& res) {
+            comments = res;
+            ok       = true;
+        });
+    CHECK(ok);
+    CHECK_EQ(comments.top_replies.size(), size_t(1));
+    if (comments.top_replies.size() == 1) {
+        CHECK(comments.top_replies[0].top);
+        CHECK(comments.top_replies[0].member.is_uploader);
+    }
+    CHECK_EQ(comments.replies.size(), size_t(1));
+    if (comments.replies.size() == 1) {
+        CHECK(!comments.replies[0].member.is_uploader);
+    }
+
+    bilibili::VideoRelation relation;
+    ok = false;
+    bilibili::HTTP::parseJson<bilibili::VideoRelation>(
+        makeJsonResponse(
+            R"({"code":0,"message":"0","data":{"attention":true,"favorite":false,"season_fav":false,"like":true,"dislike":false,"coin":2}})"),
+        [&](const auto& res) {
+            relation = res;
+            ok       = true;
+        });
+    CHECK(ok);
+    CHECK(relation.attention);
+    CHECK(relation.like);
+    CHECK_EQ(relation.coin, 2);
+
+    // 7. PGC season detail wrapper & episode indexing (#18, #19).
+    const std::string seasonJson = R"({
+        "code": 0,
+        "message": "0",
+        "result": {
+            "season_id": 28223043,
+            "season_title": "Demo Season",
+            "evaluate": "Fixture synopsis",
+            "cover": "https://i0.hdslb.com/bfs/bangumi/cover.jpg",
+            "type": 1,
+            "rating": {"score": 9.8, "count": 1200},
+            "up_info": {"mid": 777, "uname": "Studio", "avatar": "", "follower": 100, "is_follow": 1},
+            "stat": {"views": 50000, "danmakus": 300, "favorite": 400, "favorites": 400, "coins": 50, "share": 10, "likes": 800, "reply": 20},
+            "publish": {"is_finish": 1, "is_started": 1, "pub_time_show": "2024"},
+            "user_status": {"follow": 1, "progress": {"last_ep_id": 323435, "last_time": 90}},
+            "episodes": [
+                {"aid": 1, "cid": 11, "id": 323434, "title": "1", "pub_time": 1700000000, "link": "https://example.invalid/ep1"},
+                {"aid": 2, "cid": 12, "id": 323435, "title": "2", "pub_time": 1700000100, "link": "https://example.invalid/ep2"}
+            ]
+        }
+    })";
+    bilibili::SeasonResultWrapper season;
+    ok = false;
+    bilibili::HTTP::parseJson<bilibili::SeasonResultWrapper>(
+        makeJsonResponse(seasonJson), [&](const auto& res) {
+            season = res;
+            ok     = true;
+        });
+    CHECK(ok);
+    CHECK_EQ(season.episodes.size(), size_t(2));
+    if (season.episodes.size() == 2) {
+        CHECK_EQ(season.episodes[0].index, size_t(0));
+        CHECK_EQ(season.episodes[1].index, size_t(1));
+    }
+    CHECK_EQ(season.user_status.last_ep_id, size_t(323435));
+
+    // 8. Live danmaku host & pay info (#18, #19).
+    bilibili::LiveDanmakuinfo danmakuInfo;
+    ok = false;
+    bilibili::HTTP::parseJson<bilibili::LiveDanmakuinfo>(
+        makeJsonResponse(
+            R"({"code":0,"message":"0","data":{"token":"demo-token","host_list":[{"host":"broadcastlv.chat.bilibili.com","ws_port":2244}]}})"),
+        [&](const auto& res) {
+            danmakuInfo = res;
+            ok          = true;
+        });
+    CHECK(ok);
+    CHECK_EQ(danmakuInfo.token, std::string("demo-token"));
+    CHECK_EQ(danmakuInfo.host_list.size(), size_t(1));
+    if (danmakuInfo.host_list.size() == 1) {
+        CHECK_EQ(danmakuInfo.host_list[0].ws_port, 2244);
+    }
+
+    bilibili::LivePayInfo payInfo;
+    ok = false;
+    bilibili::HTTP::parseJson<bilibili::LivePayInfo>(
+        makeJsonResponse(R"({"code":0,"message":"0","data":{"permission":0,"pic":"https://i0.hdslb.com/bfs/live/pay.png"}})"),
+        [&](const auto& res) {
+            payInfo = res;
+            ok      = true;
+        });
+    CHECK(ok);
+    CHECK_EQ(payInfo.permission, 0);
+}
+
 }  // namespace
 
 int main() {
     check_api_endpoints_and_wbi();
     check_guest_discovery_models();
     check_auth_history_and_interactions();
+    check_session_hygiene_and_extended_models();
 
     return test_check::report("all Bilibili API fixture checks passed");
 }

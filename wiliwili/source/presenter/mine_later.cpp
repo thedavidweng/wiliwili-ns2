@@ -13,7 +13,10 @@ void MineLaterRequest::onWatchLaterList(const bilibili::WatchLaterListWrapper& r
 
 void MineLaterRequest::onError(const std::string& error) {}
 
-void MineLaterRequest::requestData(bool refresh) { this->requestWatchLaterList(); }
+void MineLaterRequest::requestData(bool refresh) {
+    CHECK_REQUEST
+    this->requestWatchLaterList();
+}
 
 void MineLaterRequest::requestWatchLaterList() {
     auto mid = ProgramConfig::instance().getUserID();
@@ -21,6 +24,21 @@ void MineLaterRequest::requestWatchLaterList() {
         this->onError("wiliwili/home/common/no_login"_i18n);
         return;
     }
-    BILI::getWatchLater([this](const auto& result) { this->onWatchLaterList(result); },
-                        [this](BILI_ERR) { this->onError(error); });
+    CHECK_AND_SET_REQUEST
+    ASYNC_RETAIN
+    BILI::getWatchLater(
+        [ASYNC_TOKEN](const auto& result) {
+            ASYNC_RELEASE
+            UNSET_REQUEST
+            this->onWatchLaterList(result);
+        },
+        [ASYNC_TOKEN](BILI_ERR) {
+            ASYNC_RELEASE
+            UNSET_REQUEST
+            if (code == -101 || code == -6) {
+                this->onError("wiliwili/home/common/no_login"_i18n);
+            } else {
+                this->onError(error);
+            }
+        });
 }

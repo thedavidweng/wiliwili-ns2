@@ -20,8 +20,10 @@ public:
     void requestData() {
         this->getUserInfo();
         auto mid = ProgramConfig::instance().getUserID();
-        this->getUserDynamicStat(mid);
-        this->getUserRelationStat(mid);
+        if (!mid.empty() && mid != "0") {
+            this->getUserDynamicStat(mid);
+            this->getUserRelationStat(mid);
+        }
     }
 
     void getUserInfo() {
@@ -31,7 +33,10 @@ public:
                 this->onUserInfo(this->userInfo);
             },
             [this](BILI_ERR) {
-                brls::Logger::error("getUserInfo: {}", error);
+                brls::Logger::error("getUserInfo: {} (code={})", error, code);
+                if (code == -101) {
+                    ProgramConfig::instance().clearSession();
+                }
                 this->onUserNotLogin();
             });
     }

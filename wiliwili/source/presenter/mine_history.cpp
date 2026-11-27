@@ -26,15 +26,22 @@ void MineHistoryRequest::requestHistoryVideoList() {
         return;
     }
     CHECK_AND_SET_REQUEST
+    ASYNC_RETAIN
     BILI::get_my_history(
         cursor,
-        [this](const bilibili::HistoryVideoResultWrapper &result) {
-            this->onHistoryList(result);
+        [ASYNC_TOKEN](const bilibili::HistoryVideoResultWrapper &result) {
+            ASYNC_RELEASE
+            UNSET_REQUEST
             this->cursor = result.cursor;
-            UNSET_REQUEST
+            this->onHistoryList(result);
         },
-        [this](BILI_ERR) {
-            this->onError(error);
+        [ASYNC_TOKEN](BILI_ERR) {
+            ASYNC_RELEASE
             UNSET_REQUEST
+            if (code == -101 || code == -6) {
+                this->onError("wiliwili/home/common/no_login"_i18n);
+            } else {
+                this->onError(error);
+            }
         });
 }

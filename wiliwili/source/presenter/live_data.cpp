@@ -58,9 +58,11 @@ void LiveDataRequest::requestData(int roomid) {
 void LiveDataRequest::reportHistory(int roomid) {
     // 复用视频播放页面的标记
     if (!VideoDetail::REPORT_HISTORY) return;
+    auto csrf = ProgramConfig::instance().getCSRF();
+    if (csrf.empty()) return;
 
     BILI::report_live_history(
-        roomid, ProgramConfig::instance().getCSRF(),
+        roomid, csrf,
         [roomid]() { brls::Logger::debug("report live history {}", roomid); },
         [](BILI_ERR) { brls::Logger::error("report live history: {}", error); });
 }

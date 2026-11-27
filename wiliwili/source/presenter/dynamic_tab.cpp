@@ -25,17 +25,20 @@ void DynamicTabRequest::requestUpList() {
         return;
     }
     CHECK_AND_SET_REQUEST
+    ASYNC_RETAIN
     BILI::dynamic_up_list(
-        [this](const bilibili::DynamicUpListResultWrapper &result) {
-            this->onUpList(result);
+        [ASYNC_TOKEN](const bilibili::DynamicUpListResultWrapper &result) {
+            ASYNC_RELEASE
             UNSET_REQUEST
+            this->onUpList(result);
         },
-        [this](BILI_ERR) {
-            if (code == -6) {
-                this->onError("账号未登录");
+        [ASYNC_TOKEN](BILI_ERR) {
+            ASYNC_RELEASE
+            UNSET_REQUEST
+            if (code == -6 || code == -101) {
+                this->onError("wiliwili/home/common/no_login"_i18n);
             } else {
                 this->onError(error);
             }
-            UNSET_REQUEST
         });
 }

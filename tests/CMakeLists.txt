@@ -106,6 +106,7 @@ add_test(NAME mpv_core_perf COMMAND wiliwili_mpv_core_test)
 # paths (TripleWeb), and sanitized JSON model deserialization (#11, #12, #18, #19).
 add_executable(wiliwili_bilibili_api_test
         bilibili_api_test.cpp
+        ${PROJECT_SOURCE_DIR}/wiliwili/source/api/bilibili.cpp
         ${PROJECT_SOURCE_DIR}/wiliwili/source/api/util/json.cpp
         ${PROJECT_SOURCE_DIR}/wiliwili/source/api/util/http.cpp
         ${PROJECT_SOURCE_DIR}/wiliwili/source/api/util/wbi.cpp

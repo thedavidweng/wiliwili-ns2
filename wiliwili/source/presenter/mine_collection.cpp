@@ -35,9 +35,12 @@ void MineCollectionRequest::requestData(bool refresh) {
 
 void MineCollectionRequest::requestCollectionList(std::string &mid, int i, int num) {
     CHECK_AND_SET_REQUEST
+    ASYNC_RETAIN
     BILI::get_my_collection_list(
         mid, i, num, requestType,
-        [this](const bilibili::CollectionListResultWrapper &result) {
+        [ASYNC_TOKEN](const bilibili::CollectionListResultWrapper &result) {
+            ASYNC_RELEASE
+            UNSET_REQUEST
             if (index != result.index) {
                 brls::Logger::error(
                     "MineCollectionRequest::requestCollectionList: request: "
@@ -48,11 +51,15 @@ void MineCollectionRequest::requestCollectionList(std::string &mid, int i, int n
             hasMore = result.has_more;
             index   = result.index + 1;
             this->onCollectionList(result);
-            UNSET_REQUEST
         },
-        [this](BILI_ERR) {
-            this->onError(error);
+        [ASYNC_TOKEN](BILI_ERR) {
+            ASYNC_RELEASE
             UNSET_REQUEST
+            if (code == -101 || code == -6) {
+                this->onError("wiliwili/home/common/no_login"_i18n);
+            } else {
+                this->onError(error);
+            }
         });
 }
 void MineCollectionRequest::setRequestType(int type) { requestType = type; }

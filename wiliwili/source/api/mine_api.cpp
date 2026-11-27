@@ -60,7 +60,6 @@ void BilibiliClient::get_login_info(const std::string& oauthKey, const std::func
                 return;
             } catch (const std::exception& e) {
                 ERROR_MSG("API error", -1);
-                printf("data: %s\n", r.text.c_str());
                 printf("ERROR: %s\n", e.what());
             }
         },
@@ -111,7 +110,6 @@ void BilibiliClient::get_login_info_v2(const std::string& qrcodeKey, const std::
                 return;
             } catch (const std::exception& e) {
                 ERROR_MSG("API error", -1);
-                printf("data: %s\n", r.text.c_str());
                 printf("ERROR: %s\n", e.what());
             }
         },

@@ -617,6 +617,9 @@ public:
     /// 初始化设置Cookie
     static void init(Cookies& cookies, std::function<void(Cookies, std::string)> writeCookiesCallback);
 
+    /// 清空当前内存中的 Cookie 与请求头
+    static void clearCookies();
+
     static void setProxy(const std::string& httpProxy = "", const std::string& httpsProxy = "");
 
     static void setTlsVerify(bool value);

@@ -202,6 +202,7 @@ public:
     ProgramConfig(const ProgramConfig& config);
     void setProgramConfig(const ProgramConfig& conf);
     void setCookie(const Cookie& data);
+    void clearSession();
     Cookie getCookie();
     void addHistory(const std::string& key);
     std::vector<std::string> getHistoryList();
